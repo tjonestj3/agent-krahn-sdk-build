@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Krahnborn OS — Phase 0 Overview</title>
+<style>
+  :root {
+    --bg:        #0f1115;
+    --bg-soft:   #161a22;
+    --bg-card:   #1b202b;
+    --border:    #2a3140;
+    --text:      #e6e9ef;
+    --text-dim:  #9aa3b2;
+    --text-faint:#6b7280;
+    --accent:    #6cd1c2;
+    --accent-2:  #f4b860;
+    --danger:    #f37070;
+    --code-bg:   #0b0d12;
+    --code-kw:   #c084fc;
+    --code-str:  #98c379;
+    --code-num:  #d19a66;
+    --code-com:  #6b7280;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+                 system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  main {
+    max-width: 920px;
+    margin: 0 auto;
+    padding: 56px 32px 96px;
+  }
+  header.lede {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 32px;
+    margin-bottom: 48px;
+  }
+  .eyebrow {
+    color: var(--accent);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  h1 {
+    font-size: 38px;
+    line-height: 1.15;
+    margin: 0 0 16px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 18px;
+    max-width: 64ch;
+    margin: 0;
+  }
+  h2 {
+    font-size: 24px;
+    margin: 56px 0 16px;
+    letter-spacing: -0.01em;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 8px;
+  }
+  h3 {
+    font-size: 17px;
+    margin: 28px 0 8px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  p { margin: 0 0 14px; }
+  p.dim { color: var(--text-dim); }
+  code {
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 13.5px;
+    background: var(--code-bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+    color: var(--accent-2);
+  }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px;
+    overflow-x: auto;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text);
+    margin: 12px 0 18px;
+  }
+  pre code { background: none; padding: 0; color: inherit; font-size: inherit; }
+  .kw  { color: var(--code-kw); }
+  .str { color: var(--code-str); }
+  .num { color: var(--code-num); }
+  .com { color: var(--code-com); font-style: italic; }
+
+  ul, ol { padding-left: 22px; margin: 8px 0 18px; }
+  li { margin: 4px 0; }
+
+  /* Two-col compare */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 16px 0 24px;
+  }
+  .compare > div {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .compare h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+  }
+  .compare .py h4   { color: var(--accent-2); }
+  .compare .ts h4   { color: var(--accent); }
+  .compare ul       { margin: 8px 0 0; }
+
+  /* Pipeline flow */
+  .flow {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    margin: 20px 0 28px;
+    background: var(--bg-soft);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 18px;
+  }
+  .step {
+    display: grid;
+    grid-template-columns: 32px 1fr 1fr;
+    gap: 14px;
+    align-items: center;
+    padding: 12px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .step .n {
+    width: 28px; height: 28px;
+    border-radius: 999px;
+    background: var(--accent);
+    color: #0b0d12;
+    font-weight: 700;
+    font-size: 13px;
+    display: grid; place-items: center;
+  }
+  .step .what { font-weight: 600; }
+  .step .where {
+    color: var(--text-dim);
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 12.5px;
+  }
+  .arrow {
+    color: var(--text-faint);
+    text-align: center;
+    font-size: 20px;
+    line-height: 1;
+    padding: 2px 0;
+  }
+
+  /* File tree */
+  .tree {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    font-family: "SF Mono", "JetBrains Mono", Menlo, monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text);
+  }
+  .tree .file { color: var(--accent); }
+  .tree .dir  { color: var(--accent-2); font-weight: 600; }
+  .tree .note { color: var(--text-faint); font-style: italic; }
+
+  /* Spec table */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 24px;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    color: var(--text-dim);
+    font-weight: 600;
+    font-size: 12.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  tr:last-child td { border-bottom: none; }
+  td code { color: var(--accent); background: rgba(108, 209, 194, 0.08); }
+
+  /* Callouts */
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: rgba(108, 209, 194, 0.06);
+    border-radius: 0 8px 8px 0;
+    padding: 14px 18px;
+    margin: 18px 0;
+  }
+  .callout.warn {
+    border-left-color: var(--accent-2);
+    background: rgba(244, 184, 96, 0.06);
+  }
+  .callout strong { color: var(--text); }
+
+  /* TOC */
+  nav.toc {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 0 0 32px;
+  }
+  nav.toc h4 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+  nav.toc ol {
+    margin: 0; padding-left: 18px;
+    columns: 2;
+    column-gap: 20px;
+  }
+  nav.toc a {
+    color: var(--text);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  nav.toc a:hover { color: var(--accent); }
+
+  footer {
+    margin-top: 64px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+    color: var(--text-faint);
+    font-size: 13px;
+  }
+  @media (max-width: 720px) {
+    main { padding: 36px 20px 64px; }
+    h1 { font-size: 30px; }
+    .compare { grid-template-columns: 1fr; }
+    .step { grid-template-columns: 28px 1fr; }
+    .step .where { grid-column: 2 / -1; }
+    nav.toc ol { columns: 1; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<header class="lede">
+  <p class="eyebrow">Phase 0 · Build Reference</p>
+  <h1>Krahnborn OS — what we just built and why it feels heavier than the prototype</h1>
+  <p class="subtitle">
+    The Python prototype was one file. The TypeScript version is seven files plus a database. The agent itself is identical. Everything else exists for one reason: the system needs to <em>not lose context</em> across triggers, pauses, and human responses.
+  </p>
+</header>
+
+<nav class="toc">
+  <h4>On this page</h4>
+  <ol>
+    <li><a href="#shift">The mental shift</a></li>
+    <li><a href="#pipeline">Pipeline at a glance</a></li>
+    <li><a href="#files">What lives in <code>src/</code></a></li>
+    <li><a href="#data">What gets stored</a></li>
+    <li><a href="#flow">Request flow, step by step</a></li>
+    <li><a href="#run">Two ways to run it</a></li>
+    <li><a href="#stack">Tech specs</a></li>
+    <li><a href="#next">What's next</a></li>
+  </ol>
+</nav>
+
+<!-- ============================================================== -->
+<h2 id="shift">1. The mental shift</h2>
+
+<p>The Python prototype and the TypeScript build do the <strong>same agent work</strong>. The brain — the LLM running inside the Claude Agent SDK with the Router system prompt — is unchanged. What's different is everything <em>around</em> the brain.</p>
+
+<div class="compare">
+  <div class="py">
+    <h4>Python prototype</h4>
+    <ul>
+      <li>Run from CLI with a request file path.</li>
+      <li>Agent reads vault, runs <code>sf org list</code>, returns JSON.</li>
+      <li>Output goes to stdout.</li>
+      <li>Process exits. Nothing remembered.</li>
+    </ul>
+  </div>
+  <div class="ts">
+    <h4>TypeScript Phase 0</h4>
+    <ul>
+      <li>Triggered by an HTTP request (or CLI script).</li>
+      <li>A <strong>pipeline row</strong> is created in Postgres before the agent runs.</li>
+      <li>Same agent runs. Same JSON comes back.</li>
+      <li>The row is updated to <code>completed</code> with the result + session ID.</li>
+      <li>If the agent had paused for a question, the row would sit in <code>awaiting_input</code> until you answered, then resume.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout">
+  <strong>The why in one sentence:</strong> the prototype proves an agent can do the work; the TypeScript build is the harness that lets the agent be <em>triggered by anything</em> (email, Slack, web form), <em>survive pauses</em>, and <em>be picked up by a human mid-flight</em> — none of which are possible with a one-shot script.
+</div>
+
+<!-- ============================================================== -->
+<h2 id="pipeline">2. Pipeline at a glance</h2>
+
+<p>Phase 0 has only the first agent stage (Router). Phases 1+ add more stages, but they all plug into the same scaffold.</p>
+
+<div class="flow">
+  <div class="step">
+    <div class="n">1</div>
+    <div class="what">Client request comes in</div>
+    <div class="where">POST /requests · src/routes/requests.ts</div>
+  </div>
+  <div class="arrow">▼</div>
+  <div class="step">
+    <div class="n">2</div>
+    <div class="what">Pipeline row created in Supabase</div>
+    <div class="where">status = "running" · src/db/pipelines.ts</div>
+  </div>
+  <div class="arrow">▼</div>
+  <div class="step">
+    <div class="n">3</div>
+    <div class="what">Router agent runs</div>
+    <div class="where">runRouter() · src/agents/runner.ts</div>
+  </div>
+  <div class="arrow">▼</div>
+  <div class="step">
+    <div class="n">4</div>
+    <div class="what">Agent reads vault + runs <code>sf org list</code></div>
+    <div class="where">via Read, Glob, Bash tools</div>
+  </div>
+  <div class="arrow">▼</div>
+  <div class="step">
+    <div class="n">5</div>
+    <div class="what">Agent emits final fenced JSON</div>
+    <div class="where">parsed by extractFinalJson()</div>
+  </div>
+  <div class="arrow">▼</div>
+  <div class="step">
+    <div class="n">6</div>
+    <div class="what">Pipeline row updated</div>
+    <div class="where">status = "completed", client_id, dev_hub_alias, session_id</div>
+  </div>
+  <div class="arrow">▼</div>
+  <div class="step">
+    <div class="n">7</div>
+    <div class="what">JSON response returned to caller</div>
+    <div class="where">{ pipeline, routed }</div>
+  </div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="files">3. What lives in <code>src/</code></h2>
+
+<div class="tree">
+<span class="dir">src/</span>
+├─ <span class="file">index.ts</span>            <span class="note"># Fastify boots, registers /health and /requests, listens on PORT</span>
+├─ <span class="dir">routes/</span>
+│  └─ <span class="file">requests.ts</span>      <span class="note"># the POST /requests handler — the orchestrator</span>
+├─ <span class="dir">agents/</span>
+│  ├─ <span class="file">router-agent.ts</span>  <span class="note"># system prompt + tool list + model — pure config, no execution</span>
+│  └─ <span class="file">runner.ts</span>        <span class="note"># wraps Agent SDK query(), parses the final JSON</span>
+├─ <span class="dir">db/</span>
+│  ├─ <span class="file">client.ts</span>        <span class="note"># Supabase client, single instance with service-role key</span>
+│  └─ <span class="file">pipelines.ts</span>     <span class="note"># createPipeline / updatePipeline / logEvent</span>
+├─ <span class="dir">cli/</span>
+│  └─ <span class="file">router.ts</span>        <span class="note"># run the agent without HTTP — `npm run router -- "..."`</span>
+└─ <span class="dir">config/</span>
+   └─ <span class="file">env.ts</span>           <span class="note"># validates ANTHROPIC_API_KEY, SUPABASE_*, VAULT_PATH</span>
+</div>
+
+<h3>Two layers worth distinguishing</h3>
+<ul>
+  <li><strong>Agent layer</strong> (<code>agents/</code>) — what the LLM does. Identical in spirit to the Python prototype. Prompt, allowed tools, model.</li>
+  <li><strong>Operational layer</strong> (everything else) — how the agent gets triggered, persisted, observed, resumed. This is the part the prototype didn't have.</li>
+</ul>
+
+<!-- ============================================================== -->
+<h2 id="data">4. What gets stored</h2>
+
+<p>Two Supabase tables. Together they are the source of truth for "what's happening right now" and "what happened before."</p>
+
+<h3><code>pipelines</code> — one row per request</h3>
+<table>
+  <thead>
+    <tr><th>Column</th><th>Type</th><th>Set when</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>id</code></td><td>uuid</td><td>insert</td></tr>
+    <tr><td><code>source</code></td><td>text</td><td>insert (e.g. "manual", "email")</td></tr>
+    <tr><td><code>raw_request</code></td><td>text</td><td>insert (the user's words, verbatim)</td></tr>
+    <tr><td><code>client_id</code></td><td>text</td><td>after Router runs (e.g. "nri")</td></tr>
+    <tr><td><code>dev_hub_alias</code></td><td>text</td><td>after Router runs (sf CLI alias)</td></tr>
+    <tr><td><code>org_type</code></td><td>text</td><td>after Router (always "scratch" in Phase 0)</td></tr>
+    <tr><td><code>status</code></td><td>text</td><td>state machine: running → completed | failed | awaiting_*</td></tr>
+    <tr><td><code>session_id</code></td><td>text</td><td>captured from the SDK so we can resume the agent later</td></tr>
+    <tr><td><code>current_stage</code></td><td>text</td><td>which agent is in flight (Phase 0 only "router")</td></tr>
+  </tbody>
+</table>
+
+<h3><code>pipeline_events</code> — append-only log</h3>
+<p>Every meaningful moment becomes a row: <code>created</code>, <code>stage_started</code>, <code>stage_completed</code>, <code>stage_failed</code>. The <code>payload</code> jsonb column carries whatever context that event needs (the routed JSON, error message, etc.). This is what gives us a paper trail when we ask "what did the agent do, why, and when?"</p>
+
+<div class="callout warn">
+  <strong>Why two tables?</strong> The <code>pipelines</code> row tells you the <em>current</em> state. The <code>pipeline_events</code> log tells you the <em>history</em>. Mutating one row would lose the timeline. Append-only events make audit + debugging trivial later.
+</div>
+
+<!-- ============================================================== -->
+<h2 id="flow">5. Request flow, step by step</h2>
+
+<p>What actually happens when you <code>curl POST /requests</code>:</p>
+
+<pre><code><span class="com">// src/routes/requests.ts (annotated)</span>
+
+<span class="kw">const</span> pipeline = <span class="kw">await</span> createPipeline({ source, raw_request });
+<span class="com">// → INSERT INTO pipelines (source, raw_request, status='running', current_stage='router')</span>
+
+<span class="kw">await</span> logEvent({ pipeline_id: pipeline.id, event_type: <span class="str">'created'</span> });
+<span class="kw">await</span> logEvent({ pipeline_id: pipeline.id, event_type: <span class="str">'stage_started'</span>, stage: <span class="str">'router'</span> });
+
+<span class="kw">const</span> routed = <span class="kw">await</span> runRouter(raw_request);
+<span class="com">// → spawns Claude Agent SDK process, runs Sonnet with router prompt,</span>
+<span class="com">//   agent uses Read/Glob/Bash to inspect vault + sf org list,</span>
+<span class="com">//   final fenced JSON is parsed and returned (with session_id)</span>
+
+<span class="kw">const</span> updated = <span class="kw">await</span> updatePipeline(pipeline.id, {
+  client_id: routed.client,
+  dev_hub_alias: routed.recommended_dev_hub,
+  org_type: <span class="str">'scratch'</span>,
+  session_id: routed.session_id,
+  status: <span class="str">'completed'</span>,
+});
+
+<span class="kw">await</span> logEvent({ pipeline_id: pipeline.id, event_type: <span class="str">'stage_completed'</span>, stage: <span class="str">'router'</span>, payload: routed });
+
+<span class="kw">return</span> reply.send({ pipeline: updated, routed });
+</code></pre>
+
+<p>If <code>runRouter</code> throws, the <code>catch</code> path flips the row to <code>status: "failed"</code> and writes a <code>stage_failed</code> event with the error message. Either way, the row is never left in a stale <code>running</code> state.</p>
+
+<!-- ============================================================== -->
+<h2 id="run">6. Two ways to run it</h2>
+
+<div class="compare">
+  <div>
+    <h4>HTTP (the real path)</h4>
+    <pre><code>npm run dev
+<span class="com"># in another shell:</span>
+curl -X POST :3000/requests \
+  -H <span class="str">"Content-Type: application/json"</span> \
+  -d <span class="str">'{ "source": "manual", "raw_request": "..." }'</span></code></pre>
+    <p class="dim">Writes a row, runs the agent, returns the routed JSON. Use this when you're testing the full operational loop.</p>
+  </div>
+  <div>
+    <h4>CLI (just the agent)</h4>
+    <pre><code>npm run router -- <span class="str">"add Account_Tier__c picklist to Lead for NRI"</span>
+
+<span class="com"># or from a file (matches the Python proto)</span>
+npm run router -- --file ./request.txt</code></pre>
+    <p class="dim">Skips Supabase. Identical agent, but no row, no event, no HTTP. Use this when you want to debug the agent's reasoning in isolation.</p>
+  </div>
+</div>
+
+<!-- ============================================================== -->
+<h2 id="stack">7. Tech specs</h2>
+
+<table>
+  <tbody>
+    <tr><td>Runtime</td><td>Node.js 24, TypeScript 6, ESM (<code>"type": "module"</code>)</td></tr>
+    <tr><td>HTTP framework</td><td>Fastify 5</td></tr>
+    <tr><td>Agent runtime</td><td><code>@anthropic-ai/claude-agent-sdk</code> v0.2.x</td></tr>
+    <tr><td>Router model</td><td><code>claude-sonnet-4-6</code> (override per-agent later)</td></tr>
+    <tr><td>Router tools</td><td><code>Read</code>, <code>Glob</code>, <code>Bash</code> — read-only</td></tr>
+    <tr><td>Permission mode</td><td><code>bypassPermissions</code> (no TTY in a server context)</td></tr>
+    <tr><td>Database</td><td>Supabase (managed Postgres) — server uses the <code>service_role</code> key, RLS off</td></tr>
+    <tr><td>Dev loop</td><td><code>npm run dev</code> (no watch — kernel inotify limit). <code>npm run dev:watch</code> after raising <code>fs.inotify.max_user_watches</code></td></tr>
+    <tr><td>Type safety</td><td><code>strict</code>, <code>noUncheckedIndexedAccess</code>, <code>exactOptionalPropertyTypes</code>, <code>verbatimModuleSyntax</code></td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================== -->
+<h2 id="next">8. What's next (so the scaffold makes sense)</h2>
+
+<p>Most of the indirection in Phase 0 only pays off in Phase 1+. Knowing what's coming makes the present feel less over-engineered:</p>
+
+<ul>
+  <li><strong>More agent stages.</strong> Triage → Router → Work Identifier → Execution → Docs. Each is a new entry in <code>src/agents/</code> with its own prompt and tools, invoked from <code>routes/requests.ts</code> in sequence.</li>
+  <li><strong>Pause / resume.</strong> When an agent calls <code>AskUserQuestion</code>, the orchestrator catches it, sets <code>status = 'awaiting_input'</code>, saves <code>session_id</code>, and ends the call. A Slack reply or web form later resumes the agent with <code>query({ resume: session_id, prompt: answer })</code>. <em>This is why we capture session_id now.</em></li>
+  <li><strong>Email / Slack triggers.</strong> Same <code>POST /requests</code> handler, called by a Gmail webhook or Slack event instead of a human curl. The pipeline doesn't care where the trigger came from.</li>
+  <li><strong>Inbox view.</strong> A future <code>GET /inbox</code> endpoint reads <code>pipelines</code> sorted by status. The frontend (Phase 4) wraps that.</li>
+</ul>
+
+<div class="callout">
+  <strong>The takeaway:</strong> Phase 0's job was to prove the loop. The agent works. The DB persists. The HTTP entry exists. From here, every new capability is a new agent definition + a new field on the pipeline row + a new branch in the orchestrator. The shape of the system doesn't change — only what's wired into it.
+</div>
+
+<footer>
+  Generated for the Phase 0 milestone. See <code>krahnborn-os-architecture.md</code> for the full vision and <code>CLAUDE.md</code> for current decisions.
+</footer>
+
+</main>
+</body>
+</html>

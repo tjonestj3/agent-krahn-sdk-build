@@ -1,4 +1,5 @@
 import { supabase } from './client.js';
+import type { TriagePayload } from '../agents/triage-agent.js';
 
 export type PipelineStatus =
   | 'running'
@@ -14,6 +15,7 @@ export interface PipelineRow {
   client_id: string | null;
   org_type: string | null;
   dev_hub_alias: string | null;
+  triage_payload: TriagePayload | null;
   status: PipelineStatus;
   session_id: string | null;
   current_stage: string | null;
@@ -31,7 +33,7 @@ export async function createPipeline(input: {
       source: input.source,
       raw_request: input.raw_request,
       status: 'running',
-      current_stage: 'router',
+      current_stage: 'triage',
     })
     .select()
     .single();
@@ -53,6 +55,35 @@ export async function updatePipeline(
 
   if (error) throw new Error(`updatePipeline: ${error.message}`);
   return data as PipelineRow;
+}
+
+export async function getPipeline(id: string): Promise<PipelineRow | null> {
+  const { data, error } = await supabase
+    .from('pipelines')
+    .select()
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) throw new Error(`getPipeline: ${error.message}`);
+  return (data as PipelineRow | null) ?? null;
+}
+
+/**
+ * Atomically flip a pipeline from awaiting_input → running. Returns the row
+ * on success, or null if the pipeline was no longer in awaiting_input
+ * (e.g. another /respond call already claimed it).
+ */
+export async function claimForRunning(id: string): Promise<PipelineRow | null> {
+  const { data, error } = await supabase
+    .from('pipelines')
+    .update({ status: 'running', updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('status', 'awaiting_input')
+    .select()
+    .maybeSingle();
+
+  if (error) throw new Error(`claimForRunning: ${error.message}`);
+  return (data as PipelineRow | null) ?? null;
 }
 
 export async function logEvent(input: {

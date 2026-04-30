@@ -1,35 +1,37 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { AgentConfig, AgentResult } from './types.js';
 import {
-  ROUTER_ALLOWED_TOOLS,
-  ROUTER_MAX_TURNS,
-  ROUTER_MODEL,
-  buildRouterSystemPrompt,
+  ROUTER_CONFIG,
+  type RouterPayload,
+  buildRouterUserPrompt,
 } from './router-agent.js';
-import { env } from '../config/env.js';
+import {
+  TRIAGE_CONFIG,
+  type TriagePayload,
+  buildTriageResumePrompt,
+} from './triage-agent.js';
 
-export interface RouterResult {
-  client: string | null;
-  confidence: 'high' | 'medium' | 'low';
-  reasoning: string;
-  recommended_dev_hub: string | null;
-  options: Array<{ alias: string; use_when: string }>;
-  session_id: string | null;
+export interface RunOptions {
+  resume?: string;
 }
 
-export async function runRouter(rawRequest: string): Promise<RouterResult> {
-  const systemPrompt = buildRouterSystemPrompt(env.VAULT_PATH);
-
+export async function runAgent<T>(
+  config: AgentConfig,
+  userPrompt: string,
+  runOptions?: RunOptions,
+): Promise<AgentResult<T>> {
   const response = query({
-    prompt: `Triage this client request:\n\n${rawRequest}`,
+    prompt: userPrompt,
     options: {
-      systemPrompt,
-      tools: [...ROUTER_ALLOWED_TOOLS],
-      allowedTools: [...ROUTER_ALLOWED_TOOLS],
+      systemPrompt: config.systemPrompt,
+      tools: [...config.tools],
+      allowedTools: [...config.tools],
       permissionMode: 'bypassPermissions',
       allowDangerouslySkipPermissions: true,
-      maxTurns: ROUTER_MAX_TURNS,
-      model: ROUTER_MODEL,
-      cwd: env.VAULT_PATH,
+      maxTurns: config.maxTurns,
+      model: config.model,
+      ...(config.cwd ? { cwd: config.cwd } : {}),
+      ...(runOptions?.resume ? { resume: runOptions.resume } : {}),
     },
   });
 
@@ -46,26 +48,49 @@ export async function runRouter(rawRequest: string): Promise<RouterResult> {
     }
   }
 
-  const fullText = transcript.join('\n');
-  const parsed = extractFinalJson(fullText);
+  const rawText = transcript.join('\n');
+  const data = extractFinalJson<T>(rawText);
 
-  if (!parsed) {
+  if (!data) {
     throw new Error(
-      `Router did not emit a parseable JSON block. Last assistant text:\n${fullText.slice(-500)}`,
+      `[${config.name}] did not emit a parseable JSON block. Last assistant text:\n${rawText.slice(-500)}`,
     );
   }
 
-  return { ...parsed, session_id: sessionId };
+  return { data, sessionId, rawText };
 }
 
-function extractFinalJson(text: string): Omit<RouterResult, 'session_id'> | null {
+function extractFinalJson<T>(text: string): T | null {
   const fenced = [...text.matchAll(/```json\s*([\s\S]*?)\s*```/g)];
   const candidate = fenced.length > 0 ? fenced[fenced.length - 1]?.[1] : text.trim();
   if (!candidate) return null;
 
   try {
-    return JSON.parse(candidate) as Omit<RouterResult, 'session_id'>;
+    return JSON.parse(candidate) as T;
   } catch {
     return null;
   }
+}
+
+export async function runTriage(rawRequest: string): Promise<AgentResult<TriagePayload>> {
+  return runAgent<TriagePayload>(TRIAGE_CONFIG, rawRequest);
+}
+
+export async function resumeTriage(
+  sessionId: string,
+  answer: string,
+): Promise<AgentResult<TriagePayload>> {
+  return runAgent<TriagePayload>(TRIAGE_CONFIG, buildTriageResumePrompt(answer), {
+    resume: sessionId,
+  });
+}
+
+export async function runRouter(
+  rawRequest: string,
+  triage?: TriagePayload,
+): Promise<AgentResult<RouterPayload>> {
+  return runAgent<RouterPayload>(
+    ROUTER_CONFIG,
+    buildRouterUserPrompt(rawRequest, triage),
+  );
 }

@@ -88,6 +88,7 @@ create table pipelines (
   raw_request text not null,
   client_id text,                          -- populated by router (lowercase vault folder name)
   dev_hub_alias text,                      -- populated by router (sf CLI alias of the Dev Hub)
+  triage_payload jsonb,                    -- populated by triage (Phase 1) — structured parse of raw_request
   org_type text,                           -- 'production' | 'sandbox' | 'scratch' (Phase 0 always 'scratch')
   status text not null default 'running',  -- running | awaiting_input | awaiting_review | completed | failed
   session_id text,                         -- Agent SDK session id for resuming

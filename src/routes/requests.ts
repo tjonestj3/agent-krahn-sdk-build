@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { runRouter } from '../agents/runner.js';
+import { runTriage } from '../agents/runner.js';
 import { createPipeline, updatePipeline, logEvent } from '../db/pipelines.js';
+import { processPipelineFromTriage } from '../orchestrator.js';
 
 interface CreateRequestBody {
   source?: string;
@@ -18,45 +19,36 @@ export const requestsRoute: FastifyPluginAsync = async (app) => {
     }
 
     const pipeline = await createPipeline({ source, raw_request });
-    await logEvent({
-      pipeline_id: pipeline.id,
-      event_type: 'created',
-      payload: { source },
-    });
+    await logEvent({ pipeline_id: pipeline.id, event_type: 'created', payload: { source } });
 
     try {
-      await logEvent({
-        pipeline_id: pipeline.id,
-        event_type: 'stage_started',
-        stage: 'router',
-      });
+      // ─── Stage 1: Triage ────────────────────────────────────────────
+      await logEvent({ pipeline_id: pipeline.id, event_type: 'stage_started', stage: 'triage' });
 
-      const routed = await runRouter(raw_request);
+      const triage = await runTriage(raw_request);
 
-      const updated = await updatePipeline(pipeline.id, {
-        client_id: routed.client,
-        dev_hub_alias: routed.recommended_dev_hub,
-        org_type: 'scratch',
-        session_id: routed.session_id,
-        status: 'completed',
-        current_stage: null,
+      const triagedRow = await updatePipeline(pipeline.id, {
+        triage_payload: triage.data,
+        session_id: triage.sessionId,
       });
 
       await logEvent({
         pipeline_id: pipeline.id,
         event_type: 'stage_completed',
-        stage: 'router',
-        payload: routed,
+        stage: 'triage',
+        payload: triage.data,
       });
 
-      return reply.send({ pipeline: updated, routed });
+      // ─── Stage 2: blocker gate → Router (or pause) ──────────────────
+      const outcome = await processPipelineFromTriage(triagedRow, triage);
+      return reply.send(outcome);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       await updatePipeline(pipeline.id, { status: 'failed' }).catch(() => {});
       await logEvent({
         pipeline_id: pipeline.id,
         event_type: 'stage_failed',
-        stage: 'router',
+        stage: pipeline.current_stage ?? 'unknown',
         payload: { error: message },
       }).catch(() => {});
       return reply.code(500).send({ error: message, pipeline_id: pipeline.id });
