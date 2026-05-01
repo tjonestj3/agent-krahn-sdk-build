@@ -9,6 +9,7 @@ import {
   type PipelineRow,
 } from '../db/pipelines.js';
 import { processPipelineFromTriage } from '../orchestrator.js';
+import { notifyFailed } from '../slack/notifier.js';
 
 interface CreateRequestBody {
   source?: string;
@@ -95,12 +96,13 @@ async function markFailed(
   err: unknown,
 ): Promise<void> {
   const message = err instanceof Error ? err.message : String(err);
-  await updatePipeline(pipelineId, { status: 'failed' }).catch(() => {});
+  const failed = await updatePipeline(pipelineId, { status: 'failed' }).catch(() => null);
   await logEvent({
     pipeline_id: pipelineId,
     event_type: 'stage_failed',
     stage: stage ?? 'unknown',
     payload: { error: message },
   }).catch(() => {});
+  if (failed) await notifyFailed(failed, message, stage);
 }
 

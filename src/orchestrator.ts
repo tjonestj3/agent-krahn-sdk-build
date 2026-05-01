@@ -20,6 +20,10 @@ import {
   updatePipeline,
   logEvent,
 } from './db/pipelines.js';
+import {
+  notifyAwaitingInput,
+  notifyAwaitingReview,
+} from './slack/notifier.js';
 
 export type PausedStage = 'triage' | 'work_identifier' | 'execution';
 
@@ -67,6 +71,8 @@ export async function processPipelineFromTriage(
       stage: 'triage',
       payload: { blockers },
     });
+
+    await notifyAwaitingInput(paused, 'triage', blockers);
 
     return {
       status: 'awaiting_input',
@@ -190,6 +196,8 @@ async function continueAfterWorkIdentifier(
       stage: 'work_identifier',
       payload: { blockers },
     });
+
+    await notifyAwaitingInput(paused, 'work_identifier', blockers);
 
     return {
       status: 'awaiting_input',
@@ -325,6 +333,13 @@ async function finalizeAfterExecution(
       },
     });
 
+    await notifyAwaitingInput(
+      paused,
+      'execution',
+      blockers,
+      exec.blocked_on ? { blocked_on: exec.blocked_on } : undefined,
+    );
+
     return {
       status: 'awaiting_input',
       stage: 'execution',
@@ -343,6 +358,8 @@ async function finalizeAfterExecution(
     current_stage: null,
     pr_url: exec.pr_url ?? null,
   });
+
+  await notifyAwaitingReview(done);
 
   return {
     status: 'awaiting_review',

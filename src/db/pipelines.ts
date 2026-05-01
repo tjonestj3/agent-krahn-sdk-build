@@ -23,6 +23,8 @@ export interface PipelineRow {
   scratch_org_alias: string | null;
   branch_name: string | null;
   pr_url: string | null;
+  slack_channel_id: string | null;
+  slack_message_ts: string | null;
   status: PipelineStatus;
   session_id: string | null;
   current_stage: string | null;

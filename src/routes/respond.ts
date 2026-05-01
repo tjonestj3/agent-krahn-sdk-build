@@ -17,6 +17,7 @@ import {
   processPipelineFromExecution,
   rehydrateExecutionContext,
 } from '../orchestrator.js';
+import { notifyFailed } from '../slack/notifier.js';
 
 interface RespondBody {
   answer?: string;
@@ -147,12 +148,13 @@ async function runResume(
     await processPipelineFromExecution(execRow, exec);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    await updatePipeline(claimed.id, { status: 'failed' }).catch(() => {});
+    const failed = await updatePipeline(claimed.id, { status: 'failed' }).catch(() => null);
     await logEvent({
       pipeline_id: claimed.id,
       event_type: 'stage_failed',
       stage,
       payload: { error: message, while: 'resume' },
     }).catch(() => {});
+    if (failed) await notifyFailed(failed, message, stage);
   }
 }
