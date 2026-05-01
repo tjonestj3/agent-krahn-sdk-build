@@ -10,38 +10,48 @@ This file is just session-state and decisions made outside those docs.
 
 ## Where we are
 
-**Phase 0 shipped (commit `420e3dd`).** Phase 1 in progress: **Triage → Router orchestration is wired** (uncommitted at the time of this update).
+**Phase 0 shipped (commit `420e3dd`).** Phase 1 milestones:
+- M1 (committed `811b6a1`): Triage agent + pause/resume cycle.
+- M2 (uncommitted): **Work Identifier agent** added. Pipeline is now Triage → Router → Work Identifier, each capable of pausing and resuming on its own blockers.
 
 **What exists:**
 - `src/index.ts` — Fastify boot
-- `src/routes/requests.ts` — `POST /requests` orchestrator: Triage → blocker gate → Router
+- `src/routes/requests.ts` — `POST /requests` entry point
+- `src/routes/respond.ts` — `POST /requests/:id/respond`, branches on `current_stage` (`triage` | `work_identifier`) to route the resume to the right agent
+- `src/orchestrator.ts` — shared post-Triage flow: triage gate → Router → Work Identifier gate → completed. Two entry points: `processPipelineFromTriage`, `processPipelineFromWorkIdentifier`
 - `src/agents/types.ts` — `AgentConfig`, `AgentResult<T>`
-- `src/agents/runner.ts` — generic `runAgent<T>(config, prompt)`, plus `runTriage`/`runRouter` wrappers
+- `src/agents/runner.ts` — generic `runAgent<T>`, plus `run/resume` pairs for Triage, Router, Work Identifier
 - `src/agents/triage-agent.ts` — Haiku, no tools, structured parse + ambiguity flagging
 - `src/agents/router-agent.ts` — Sonnet 4.6, Read/Glob/Bash, Dev Hub-only, accepts Triage payload
-- `src/db/client.ts`, `src/db/pipelines.ts` — Supabase client + pipeline/event helpers (now includes `triage_payload`)
-- `src/cli/router.ts`, `src/cli/triage.ts` — run either agent in isolation
+- `src/agents/work-identifier-agent.ts` — Sonnet 4.6, no tools. Refines `change_type` into a precise `work_classification`, enumerates `metadata_changes`, sizes `story_points` (Fibonacci 1–13), captures `complexity_factors` and `execution_notes` for the future Execution agent. Re-uses the same `ambiguities[]`/`blocker` pattern as Triage.
+- `src/db/client.ts`, `src/db/pipelines.ts` — Supabase client + pipeline/event helpers. `PipelineRow` now includes `triage_payload` and `work_identifier_payload`.
+- `src/cli/triage.ts`, `src/cli/router.ts`, `src/cli/work-identifier.ts` — run any agent in isolation. The work-identifier CLI runs Triage → Router → WI in-process for a quick end-to-end taste without DB or HTTP.
+- `src/cli/request.ts`, `src/cli/respond.ts` — local test loop for the pause/resume cycle. `npm run request -- "raw text"` POSTs to a running server; on pause, `npm run respond -- <pipeline_id> "answer"` resumes it. (Server must be running via `npm run dev`.) These exist *instead of* the Slack loop for now — Slack will land later when a public endpoint is ready.
+- `src/cli/pipelines.ts` — list pipelines or inspect one by id
 - `src/config/env.ts` — env var validation
-- `db/migrations/001_add_triage_payload.sql` — SQL for the new column
-- `.env.example`, `.gitignore`, tuned `tsconfig.json`, `npm run dev` / `npm run router` / `npm run triage` scripts
-- `docs/phase-0-overview.html` — single-page walkthrough of the build
+- `db/migrations/001_add_triage_payload.sql` — Triage payload column
+- `db/migrations/002_add_work_identifier_payload.sql` — Work Identifier payload column
 
 **Typecheck passes (`npx tsc --noEmit`).**
 
-**To bring up the new orchestration:**
-1. Run `db/migrations/001_add_triage_payload.sql` in Supabase SQL editor.
+**To bring up M2:**
+1. Run `db/migrations/002_add_work_identifier_payload.sql` in Supabase SQL editor.
 2. Restart `npm run dev`.
-3. `curl POST /requests` — response now includes both `triage` and `routed` keys.
+3. `npm run request -- "your raw request"` — happy path returns `{ status: 'completed', triage, routed, work_identifier }`. Blocker path returns `{ status: 'awaiting_input', stage, blockers, ... }` and prints the resume command.
+
+## Pipeline status semantics
 
 ## Pipeline status semantics
 
 | Status | Meaning |
 |---|---|
 | `running` | Agents currently executing |
-| `awaiting_input` | Triage flagged a blocker ambiguity; needs human answer before proceeding |
+| `awaiting_input` | An agent flagged a blocker ambiguity; needs human answer before proceeding. Check `current_stage` to know which agent paused. |
 | `awaiting_review` | (Phase 2+) PR open, awaiting human review |
 | `completed` | All stages finished cleanly |
 | `failed` | An agent threw; see `pipeline_events.event_type = 'stage_failed'` for the error |
+
+`current_stage` values you may see while paused: `'triage'`, `'work_identifier'`. (Router doesn't pause yet — it always returns a routed payload, even at low confidence.)
 
 ## Decisions made (Phase 0 open questions resolved)
 

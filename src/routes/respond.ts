@@ -1,12 +1,15 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { resumeTriage } from '../agents/runner.js';
+import { resumeTriage, resumeWorkIdentifier } from '../agents/runner.js';
 import {
   getPipeline,
   claimForRunning,
   updatePipeline,
   logEvent,
 } from '../db/pipelines.js';
-import { processPipelineFromTriage } from '../orchestrator.js';
+import {
+  processPipelineFromTriage,
+  processPipelineFromWorkIdentifier,
+} from '../orchestrator.js';
 
 interface RespondBody {
   answer?: string;
@@ -39,9 +42,10 @@ export const respondRoute: FastifyPluginAsync = async (app) => {
       return reply.code(500).send({ error: 'pipeline has no session_id to resume' });
     }
 
-    if (existing.current_stage !== 'triage') {
+    const stage = existing.current_stage;
+    if (stage !== 'triage' && stage !== 'work_identifier') {
       return reply.code(501).send({
-        error: `cannot yet resume stage: ${existing.current_stage ?? 'null'}`,
+        error: `cannot yet resume stage: ${stage ?? 'null'}`,
       });
     }
 
@@ -57,29 +61,48 @@ export const respondRoute: FastifyPluginAsync = async (app) => {
     await logEvent({
       pipeline_id: id,
       event_type: 'human_response',
-      stage: 'triage',
+      stage,
       payload: { answer },
     });
 
     try {
-      // Resume Triage from the saved session, with the human's answer.
-      await logEvent({ pipeline_id: id, event_type: 'stage_resumed', stage: 'triage' });
+      await logEvent({ pipeline_id: id, event_type: 'stage_resumed', stage });
 
-      const triage = await resumeTriage(claimed.session_id!, answer);
+      if (stage === 'triage') {
+        const triage = await resumeTriage(claimed.session_id!, answer);
 
-      const triagedRow = await updatePipeline(id, {
-        triage_payload: triage.data,
-        session_id: triage.sessionId,
+        const triagedRow = await updatePipeline(id, {
+          triage_payload: triage.data,
+          session_id: triage.sessionId,
+        });
+
+        await logEvent({
+          pipeline_id: id,
+          event_type: 'stage_completed',
+          stage: 'triage',
+          payload: triage.data,
+        });
+
+        const outcome = await processPipelineFromTriage(triagedRow, triage);
+        return reply.send(outcome);
+      }
+
+      // stage === 'work_identifier'
+      const wi = await resumeWorkIdentifier(claimed.session_id!, answer);
+
+      const wiRow = await updatePipeline(id, {
+        work_identifier_payload: wi.data,
+        session_id: wi.sessionId,
       });
 
       await logEvent({
         pipeline_id: id,
         event_type: 'stage_completed',
-        stage: 'triage',
-        payload: triage.data,
+        stage: 'work_identifier',
+        payload: wi.data,
       });
 
-      const outcome = await processPipelineFromTriage(triagedRow, triage);
+      const outcome = await processPipelineFromWorkIdentifier(wiRow, wi);
       return reply.send(outcome);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -87,7 +110,7 @@ export const respondRoute: FastifyPluginAsync = async (app) => {
       await logEvent({
         pipeline_id: id,
         event_type: 'stage_failed',
-        stage: 'triage',
+        stage,
         payload: { error: message, while: 'resume' },
       }).catch(() => {});
       return reply.code(500).send({ error: message, pipeline_id: id });

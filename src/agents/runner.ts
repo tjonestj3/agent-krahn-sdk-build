@@ -4,12 +4,19 @@ import {
   ROUTER_CONFIG,
   type RouterPayload,
   buildRouterUserPrompt,
+  gatherRouterContext,
 } from './router-agent.js';
 import {
   TRIAGE_CONFIG,
   type TriagePayload,
   buildTriageResumePrompt,
 } from './triage-agent.js';
+import {
+  WORK_IDENTIFIER_CONFIG,
+  type WorkIdentifierPayload,
+  buildWorkIdentifierUserPrompt,
+  buildWorkIdentifierResumePrompt,
+} from './work-identifier-agent.js';
 
 export interface RunOptions {
   resume?: string;
@@ -89,8 +96,31 @@ export async function runRouter(
   rawRequest: string,
   triage?: TriagePayload,
 ): Promise<AgentResult<RouterPayload>> {
+  const context = await gatherRouterContext();
   return runAgent<RouterPayload>(
     ROUTER_CONFIG,
-    buildRouterUserPrompt(rawRequest, triage),
+    buildRouterUserPrompt(rawRequest, context, triage),
+  );
+}
+
+export async function runWorkIdentifier(
+  rawRequest: string,
+  triage: TriagePayload,
+  routed: RouterPayload,
+): Promise<AgentResult<WorkIdentifierPayload>> {
+  return runAgent<WorkIdentifierPayload>(
+    WORK_IDENTIFIER_CONFIG,
+    buildWorkIdentifierUserPrompt(rawRequest, triage, routed),
+  );
+}
+
+export async function resumeWorkIdentifier(
+  sessionId: string,
+  answer: string,
+): Promise<AgentResult<WorkIdentifierPayload>> {
+  return runAgent<WorkIdentifierPayload>(
+    WORK_IDENTIFIER_CONFIG,
+    buildWorkIdentifierResumePrompt(answer),
+    { resume: sessionId },
   );
 }
