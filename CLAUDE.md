@@ -12,7 +12,8 @@ This file is just session-state and decisions made outside those docs.
 
 **Phase 0 shipped (commit `420e3dd`).** Phase 1 milestones:
 - M1 (committed `811b6a1`): Triage agent + pause/resume cycle.
-- M2 (uncommitted): **Work Identifier agent** added. Pipeline is now Triage → Router → Work Identifier, each capable of pausing and resuming on its own blockers.
+- M2 (committed `7494008` + `7b9a58a`): Work Identifier agent, pre-baked Router context, MCP runtime lockdown.
+- M3 (uncommitted): **Execution agent** + scratch-org plumbing. Pipeline is now Triage → Router → Work Identifier → Execution, ending at `awaiting_review` with a real GitHub PR.
 
 **What exists:**
 - `src/index.ts` — Fastify boot
@@ -23,7 +24,10 @@ This file is just session-state and decisions made outside those docs.
 - `src/agents/runner.ts` — generic `runAgent<T>`, plus `run/resume` pairs for Triage, Router, Work Identifier
 - `src/agents/triage-agent.ts` — Haiku, no tools, structured parse + ambiguity flagging
 - `src/agents/router-agent.ts` — Sonnet 4.6, Read/Glob/Bash, Dev Hub-only, accepts Triage payload
-- `src/agents/work-identifier-agent.ts` — Sonnet 4.6, no tools. Refines `change_type` into a precise `work_classification`, enumerates `metadata_changes`, sizes `story_points` (Fibonacci 1–13), captures `complexity_factors` and `execution_notes` for the future Execution agent. Re-uses the same `ambiguities[]`/`blocker` pattern as Triage.
+- `src/agents/work-identifier-agent.ts` — Sonnet 4.6, no tools. Refines `change_type` into a precise `work_classification`, enumerates `metadata_changes`, sizes `story_points` (Fibonacci 1–13), captures `complexity_factors` and `execution_notes` for the Execution agent. Re-uses the same `ambiguities[]`/`blocker` pattern as Triage.
+- `src/agents/execution-agent.ts` — Sonnet 4.6, tools: Read/Write/Edit/Glob/Bash, maxTurns 60, `cwd` set to the client's metadata repo (e.g. `~/Salesforce/KRAHN/Krahn-Agent-Project/`). Reads the WI spec, edits metadata XML, deploys to a scratch org, runs Apex tests, commits on a feature branch, opens a GitHub PR. Returns either `status: 'pr_opened'` (success → pipeline → `awaiting_review`) or `status: 'needs_input'` (3 retries exhausted → pipeline → `awaiting_input`).
+- `src/execution/setup.ts` — `setupExecutionEnvironment(pipeline, wi)`: Node-side prep before the Execution agent runs. Loads client config, asserts clean tree, fetch+pull main, creates feature branch, spins scratch org, source-pushes main into it, sets project-local default `target-org`. Returns `ExecutionContext` for the agent.
+- `src/config/clients.ts` — `loadClientConfig(name)` parses `vault/clients/<name>/_index.md` for `repo_remote`, `repo_local`, and `sf_alias`. Plain markdown key-value, not frontmatter.
 - `src/db/client.ts`, `src/db/pipelines.ts` — Supabase client + pipeline/event helpers. `PipelineRow` now includes `triage_payload` and `work_identifier_payload`.
 - `src/cli/triage.ts`, `src/cli/router.ts`, `src/cli/work-identifier.ts` — run any agent in isolation. The work-identifier CLI runs Triage → Router → WI in-process for a quick end-to-end taste without DB or HTTP.
 - `src/cli/request.ts`, `src/cli/respond.ts` — local test loop for the pause/resume cycle. `npm run request -- "raw text"` POSTs to a running server; on pause, `npm run respond -- <pipeline_id> "answer"` resumes it. (Server must be running via `npm run dev`.) These exist *instead of* the Slack loop for now — Slack will land later when a public endpoint is ready.
@@ -31,13 +35,20 @@ This file is just session-state and decisions made outside those docs.
 - `src/config/env.ts` — env var validation
 - `db/migrations/001_add_triage_payload.sql` — Triage payload column
 - `db/migrations/002_add_work_identifier_payload.sql` — Work Identifier payload column
+- `db/migrations/003_add_execution_columns.sql` — Execution: `scratch_org_alias`, `branch_name`, `execution_payload`, `pr_url`
+- `bin/sf-orgs-summary.sh` — slim org list (no tokens), used by Router context gathering
+- `bin/spin-scratch.sh <devhub> <alias> [days]` — orchestrator-side scratch org spin, returns slim JSON
+- `bin/scratch-query.sh "<soql>"` — agent-facing SOQL wrapper, strips `attributes` blocks
+- `bin/scratch-describe.sh <SObject>` — agent-facing describe wrapper, returns just field shape
 
 **Typecheck passes (`npx tsc --noEmit`).**
 
-**To bring up M2:**
-1. Run `db/migrations/002_add_work_identifier_payload.sql` in Supabase SQL editor.
-2. Restart `npm run dev`.
-3. `npm run request -- "your raw request"` — happy path returns `{ status: 'completed', triage, routed, work_identifier }`. Blocker path returns `{ status: 'awaiting_input', stage, blockers, ... }` and prints the resume command.
+**To bring up M3:**
+1. Run `db/migrations/003_add_execution_columns.sql` in Supabase SQL editor.
+2. Make sure `gh` is authed (`gh auth status`) and SSH-to-GitHub works for the Krahnborn repo. The agent uses `gh pr create` directly.
+3. Make sure the Krahnborn repo working tree at `~/Salesforce/KRAHN/Krahn-Agent-Project/` is clean before submitting a request — `setupExecutionEnvironment` refuses to start if not.
+4. Restart `npm run dev`.
+5. `npm run request -- "your raw request"`. Happy path now ends at `status: 'awaiting_review'` with a real `pr_url`. The scratch org survives 7 days for human review.
 
 ## Pipeline status semantics
 
@@ -47,11 +58,11 @@ This file is just session-state and decisions made outside those docs.
 |---|---|
 | `running` | Agents currently executing |
 | `awaiting_input` | An agent flagged a blocker ambiguity; needs human answer before proceeding. Check `current_stage` to know which agent paused. |
-| `awaiting_review` | (Phase 2+) PR open, awaiting human review |
-| `completed` | All stages finished cleanly |
-| `failed` | An agent threw; see `pipeline_events.event_type = 'stage_failed'` for the error |
+| `awaiting_review` | Execution opened a PR. Pipeline waits here until the PR is merged (Phase 3 will resume into Documentation; for now this is terminal). |
+| `completed` | (Phase 3+) All stages including Documentation finished. M3 doesn't reach this state. |
+| `failed` | An agent or orchestrator step threw; see `pipeline_events.event_type = 'stage_failed'` for the error |
 
-`current_stage` values you may see while paused: `'triage'`, `'work_identifier'`. (Router doesn't pause yet — it always returns a routed payload, even at low confidence.)
+`current_stage` values you may see while paused: `'triage'`, `'work_identifier'`, `'execution'`. (Router doesn't pause — it always returns a routed payload, even at low confidence.)
 
 ## Decisions made (Phase 0 open questions resolved)
 
@@ -66,7 +77,9 @@ This file is just session-state and decisions made outside those docs.
 ## Known issues / deferred decisions
 
 - `npm audit` reports 2 moderate vulns: `@anthropic-ai/sdk` 0.79.0–0.91.0 has insecure default file permissions in the memory tool (GHSA-p7fg-763f-g4gf). Phase 0 does not use the memory tool, so not blocking. The npm-suggested "fix" is a downgrade to `claude-agent-sdk@0.2.90`, which is backward — wait for a forward fix in a future SDK release before shipping anything that uses memory.
-- Running `sf org list --json` returns access tokens in the JSON, which the LLM sees. Existing trade-off from the Python prototype. Acceptable for local Phase 0; for hosted Phase 2+, scrub tokens before passing to the agent or use a wrapper that returns alias-only metadata.
+- Running `sf org list --json` returns access tokens in the JSON. Resolved in M2 by `bin/sf-orgs-summary.sh` which strips tokens before output reaches the LLM. Use it (and the other `bin/scratch-*.sh` wrappers) instead of raw `sf` whenever the output goes to a model.
+- **Concurrency:** M3 assumes one pipeline at a time per client repo. `setupExecutionEnvironment` writes the scratch alias into `<repo>/.sf/config.json` as the project-local default `target-org`; two pipelines on the same repo would stomp each other. Defer to M4 (git worktrees + per-pipeline config).
+- **No automatic scratch teardown.** Scratch orgs spun by M3 live for 7 days (the default) and then auto-expire on the Dev Hub. If you need to free a Dev Hub slot earlier, `sf org delete --target-org <alias>` manually. The Execution agent is forbidden from deleting orgs.
 
 ## Reference: Python prototype
 

@@ -17,6 +17,13 @@ import {
   buildWorkIdentifierUserPrompt,
   buildWorkIdentifierResumePrompt,
 } from './work-identifier-agent.js';
+import {
+  EXECUTION_CONFIG,
+  type ExecutionPayload,
+  buildExecutionUserPrompt,
+  buildExecutionResumePrompt,
+} from './execution-agent.js';
+import type { ExecutionContext } from '../execution/setup.js';
 
 export interface RunOptions {
   resume?: string;
@@ -124,6 +131,31 @@ export async function resumeWorkIdentifier(
   return runAgent<WorkIdentifierPayload>(
     WORK_IDENTIFIER_CONFIG,
     buildWorkIdentifierResumePrompt(answer),
+    { resume: sessionId },
+  );
+}
+
+export async function runExecution(
+  rawRequest: string,
+  triage: TriagePayload,
+  routed: RouterPayload,
+  workIdentifier: WorkIdentifierPayload,
+  ctx: ExecutionContext,
+): Promise<AgentResult<ExecutionPayload>> {
+  return runAgent<ExecutionPayload>(
+    { ...EXECUTION_CONFIG, cwd: ctx.repo_local },
+    buildExecutionUserPrompt(rawRequest, triage, routed, workIdentifier, ctx),
+  );
+}
+
+export async function resumeExecution(
+  sessionId: string,
+  answer: string,
+  ctx: ExecutionContext,
+): Promise<AgentResult<ExecutionPayload>> {
+  return runAgent<ExecutionPayload>(
+    { ...EXECUTION_CONFIG, cwd: ctx.repo_local },
+    buildExecutionResumePrompt(answer),
     { resume: sessionId },
   );
 }

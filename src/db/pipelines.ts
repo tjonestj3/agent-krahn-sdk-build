@@ -1,6 +1,7 @@
 import { supabase } from './client.js';
 import type { TriagePayload } from '../agents/triage-agent.js';
 import type { WorkIdentifierPayload } from '../agents/work-identifier-agent.js';
+import type { ExecutionPayload } from '../agents/execution-agent.js';
 
 export type PipelineStatus =
   | 'running'
@@ -18,6 +19,10 @@ export interface PipelineRow {
   dev_hub_alias: string | null;
   triage_payload: TriagePayload | null;
   work_identifier_payload: WorkIdentifierPayload | null;
+  execution_payload: ExecutionPayload | null;
+  scratch_org_alias: string | null;
+  branch_name: string | null;
+  pr_url: string | null;
   status: PipelineStatus;
   session_id: string | null;
   current_stage: string | null;

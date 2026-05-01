@@ -1,5 +1,9 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { resumeTriage, resumeWorkIdentifier } from '../agents/runner.js';
+import {
+  resumeTriage,
+  resumeWorkIdentifier,
+  resumeExecution,
+} from '../agents/runner.js';
 import {
   getPipeline,
   claimForRunning,
@@ -9,6 +13,8 @@ import {
 import {
   processPipelineFromTriage,
   processPipelineFromWorkIdentifier,
+  processPipelineFromExecution,
+  rehydrateExecutionContext,
 } from '../orchestrator.js';
 
 interface RespondBody {
@@ -43,7 +49,7 @@ export const respondRoute: FastifyPluginAsync = async (app) => {
     }
 
     const stage = existing.current_stage;
-    if (stage !== 'triage' && stage !== 'work_identifier') {
+    if (stage !== 'triage' && stage !== 'work_identifier' && stage !== 'execution') {
       return reply.code(501).send({
         error: `cannot yet resume stage: ${stage ?? 'null'}`,
       });
@@ -87,22 +93,43 @@ export const respondRoute: FastifyPluginAsync = async (app) => {
         return reply.send(outcome);
       }
 
-      // stage === 'work_identifier'
-      const wi = await resumeWorkIdentifier(claimed.session_id!, answer);
+      if (stage === 'work_identifier') {
+        const wi = await resumeWorkIdentifier(claimed.session_id!, answer);
 
-      const wiRow = await updatePipeline(id, {
-        work_identifier_payload: wi.data,
-        session_id: wi.sessionId,
+        const wiRow = await updatePipeline(id, {
+          work_identifier_payload: wi.data,
+          session_id: wi.sessionId,
+        });
+
+        await logEvent({
+          pipeline_id: id,
+          event_type: 'stage_completed',
+          stage: 'work_identifier',
+          payload: wi.data,
+        });
+
+        const outcome = await processPipelineFromWorkIdentifier(wiRow, wi);
+        return reply.send(outcome);
+      }
+
+      // stage === 'execution'
+      const ctx = await rehydrateExecutionContext(claimed);
+      const exec = await resumeExecution(claimed.session_id!, answer, ctx);
+
+      const execRow = await updatePipeline(id, {
+        execution_payload: exec.data,
+        session_id: exec.sessionId,
+        pr_url: exec.data.pr_url ?? claimed.pr_url ?? null,
       });
 
       await logEvent({
         pipeline_id: id,
         event_type: 'stage_completed',
-        stage: 'work_identifier',
-        payload: wi.data,
+        stage: 'execution',
+        payload: exec.data,
       });
 
-      const outcome = await processPipelineFromWorkIdentifier(wiRow, wi);
+      const outcome = await processPipelineFromExecution(execRow, exec);
       return reply.send(outcome);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
