@@ -13,6 +13,10 @@ export const env = {
   SUPABASE_URL: required('SUPABASE_URL'),
   SUPABASE_SERVICE_KEY: required('SUPABASE_SERVICE_KEY'),
   KRAHNBORN_API_TOKEN: required('KRAHNBORN_API_TOKEN'),
+  SLACK_BOT_TOKEN: required('SLACK_BOT_TOKEN'),
+  SLACK_SIGNING_SECRET: required('SLACK_SIGNING_SECRET'),
+  SLACK_USER_EMAIL: process.env.SLACK_USER_EMAIL ?? 'thomas@krahnborn.com',
+  SLACK_USER_NAME_FALLBACK: process.env.SLACK_USER_NAME_FALLBACK ?? 'Thomas Jones',
   PORT: Number(process.env.PORT ?? 3000),
   VAULT_PATH: process.env.KRAHNBORN_VAULT_PATH ?? `${process.env.HOME}/vault`,
 } as const;
