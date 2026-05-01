@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { authHeaders } from './auth.js';
 import { pollUntilTerminal } from './poll.js';
 
 const args = process.argv.slice(2);
@@ -42,7 +43,7 @@ const url = `http://localhost:${port}/requests/${pipelineId}/respond`;
 
 const res = await fetch(url, {
   method: 'POST',
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', ...authHeaders() },
   body: JSON.stringify({ answer }),
 });
 

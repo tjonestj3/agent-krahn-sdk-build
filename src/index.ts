@@ -1,11 +1,14 @@
 import Fastify from 'fastify';
 import { env } from './config/env.js';
+import { registerBearerAuth } from './middleware/auth.js';
 import { requestsRoute } from './routes/requests.js';
 import { respondRoute } from './routes/respond.js';
 
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL ?? 'info' },
 });
+
+registerBearerAuth(app);
 
 app.get('/health', async () => ({ status: 'ok' }));
 

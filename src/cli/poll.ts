@@ -1,3 +1,5 @@
+import { authHeaders } from './auth.js';
+
 /**
  * Shared polling helper for the request/respond CLIs.
  *
@@ -82,7 +84,9 @@ export async function pollUntilTerminal(
 }
 
 async function fetchSnapshot(baseUrl: string, id: string): Promise<PipelineSnapshot> {
-  const res = await fetch(`${baseUrl}/requests/${id}`);
+  const res = await fetch(`${baseUrl}/requests/${id}`, {
+    headers: authHeaders(),
+  });
   if (!res.ok) {
     throw new Error(`GET /requests/${id} failed: ${res.status}`);
   }
