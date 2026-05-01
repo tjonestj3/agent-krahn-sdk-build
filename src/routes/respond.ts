@@ -9,6 +9,7 @@ import {
   claimForRunning,
   updatePipeline,
   logEvent,
+  type PipelineRow,
 } from '../db/pipelines.js';
 import {
   processPipelineFromTriage,
@@ -55,8 +56,8 @@ export const respondRoute: FastifyPluginAsync = async (app) => {
       });
     }
 
-    // Optimistic claim: flips awaiting_input → running atomically. If another
-    // /respond beat us to it, the claim returns null and we 409.
+    // Atomic flip from awaiting_input → running. Loses the race if another
+    // /respond beat us to it.
     const claimed = await claimForRunning(id);
     if (!claimed) {
       return reply.code(409).send({
@@ -71,76 +72,87 @@ export const respondRoute: FastifyPluginAsync = async (app) => {
       payload: { answer },
     });
 
-    try {
-      await logEvent({ pipeline_id: id, event_type: 'stage_resumed', stage });
+    fireAndForget(`resume-${id}`, () => runResume(claimed, stage, answer));
 
-      if (stage === 'triage') {
-        const triage = await resumeTriage(claimed.session_id!, answer);
-
-        const triagedRow = await updatePipeline(id, {
-          triage_payload: triage.data,
-          session_id: triage.sessionId,
-        });
-
-        await logEvent({
-          pipeline_id: id,
-          event_type: 'stage_completed',
-          stage: 'triage',
-          payload: triage.data,
-        });
-
-        const outcome = await processPipelineFromTriage(triagedRow, triage);
-        return reply.send(outcome);
-      }
-
-      if (stage === 'work_identifier') {
-        const wi = await resumeWorkIdentifier(claimed.session_id!, answer);
-
-        const wiRow = await updatePipeline(id, {
-          work_identifier_payload: wi.data,
-          session_id: wi.sessionId,
-        });
-
-        await logEvent({
-          pipeline_id: id,
-          event_type: 'stage_completed',
-          stage: 'work_identifier',
-          payload: wi.data,
-        });
-
-        const outcome = await processPipelineFromWorkIdentifier(wiRow, wi);
-        return reply.send(outcome);
-      }
-
-      // stage === 'execution'
-      const ctx = await rehydrateExecutionContext(claimed);
-      const exec = await resumeExecution(claimed.session_id!, answer, ctx);
-
-      const execRow = await updatePipeline(id, {
-        execution_payload: exec.data,
-        session_id: exec.sessionId,
-        pr_url: exec.data.pr_url ?? claimed.pr_url ?? null,
-      });
-
-      await logEvent({
-        pipeline_id: id,
-        event_type: 'stage_completed',
-        stage: 'execution',
-        payload: exec.data,
-      });
-
-      const outcome = await processPipelineFromExecution(execRow, exec);
-      return reply.send(outcome);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await updatePipeline(id, { status: 'failed' }).catch(() => {});
-      await logEvent({
-        pipeline_id: id,
-        event_type: 'stage_failed',
-        stage,
-        payload: { error: message, while: 'resume' },
-      }).catch(() => {});
-      return reply.code(500).send({ error: message, pipeline_id: id });
-    }
+    return reply.code(202).send({
+      pipeline_id: id,
+      status: claimed.status,
+      current_stage: claimed.current_stage,
+      pipeline: claimed,
+    });
   });
 };
+
+function fireAndForget(label: string, work: () => Promise<void>): void {
+  void work().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error(`[fireAndForget:${label}]`, err);
+  });
+}
+
+async function runResume(
+  claimed: PipelineRow,
+  stage: 'triage' | 'work_identifier' | 'execution',
+  answer: string,
+): Promise<void> {
+  try {
+    await logEvent({ pipeline_id: claimed.id, event_type: 'stage_resumed', stage });
+
+    if (stage === 'triage') {
+      const triage = await resumeTriage(claimed.session_id!, answer);
+      const triagedRow = await updatePipeline(claimed.id, {
+        triage_payload: triage.data,
+        session_id: triage.sessionId,
+      });
+      await logEvent({
+        pipeline_id: claimed.id,
+        event_type: 'stage_completed',
+        stage: 'triage',
+        payload: triage.data,
+      });
+      await processPipelineFromTriage(triagedRow, triage);
+      return;
+    }
+
+    if (stage === 'work_identifier') {
+      const wi = await resumeWorkIdentifier(claimed.session_id!, answer);
+      const wiRow = await updatePipeline(claimed.id, {
+        work_identifier_payload: wi.data,
+        session_id: wi.sessionId,
+      });
+      await logEvent({
+        pipeline_id: claimed.id,
+        event_type: 'stage_completed',
+        stage: 'work_identifier',
+        payload: wi.data,
+      });
+      await processPipelineFromWorkIdentifier(wiRow, wi);
+      return;
+    }
+
+    // stage === 'execution'
+    const ctx = await rehydrateExecutionContext(claimed);
+    const exec = await resumeExecution(claimed.session_id!, answer, ctx);
+    const execRow = await updatePipeline(claimed.id, {
+      execution_payload: exec.data,
+      session_id: exec.sessionId,
+      pr_url: exec.data.pr_url ?? claimed.pr_url ?? null,
+    });
+    await logEvent({
+      pipeline_id: claimed.id,
+      event_type: 'stage_completed',
+      stage: 'execution',
+      payload: exec.data,
+    });
+    await processPipelineFromExecution(execRow, exec);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await updatePipeline(claimed.id, { status: 'failed' }).catch(() => {});
+    await logEvent({
+      pipeline_id: claimed.id,
+      event_type: 'stage_failed',
+      stage,
+      payload: { error: message, while: 'resume' },
+    }).catch(() => {});
+  }
+}

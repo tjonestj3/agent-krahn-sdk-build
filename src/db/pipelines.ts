@@ -108,3 +108,25 @@ export async function logEvent(input: {
 
   if (error) throw new Error(`logEvent: ${error.message}`);
 }
+
+export interface PipelineEventRow {
+  event_type: string;
+  stage: string | null;
+  payload: unknown;
+  created_at: string;
+}
+
+export async function recentEvents(
+  pipelineId: string,
+  limit = 50,
+): Promise<PipelineEventRow[]> {
+  const { data, error } = await supabase
+    .from('pipeline_events')
+    .select('event_type, stage, payload, created_at')
+    .eq('pipeline_id', pipelineId)
+    .order('created_at', { ascending: true })
+    .limit(limit);
+
+  if (error) throw new Error(`recentEvents: ${error.message}`);
+  return (data ?? []) as PipelineEventRow[];
+}

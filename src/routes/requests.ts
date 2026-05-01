@@ -1,11 +1,22 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { runTriage } from '../agents/runner.js';
-import { createPipeline, updatePipeline, logEvent } from '../db/pipelines.js';
+import {
+  createPipeline,
+  getPipeline,
+  updatePipeline,
+  logEvent,
+  recentEvents,
+  type PipelineRow,
+} from '../db/pipelines.js';
 import { processPipelineFromTriage } from '../orchestrator.js';
 
 interface CreateRequestBody {
   source?: string;
   raw_request?: string;
+}
+
+interface PipelineParams {
+  id: string;
 }
 
 export const requestsRoute: FastifyPluginAsync = async (app) => {
@@ -21,37 +32,75 @@ export const requestsRoute: FastifyPluginAsync = async (app) => {
     const pipeline = await createPipeline({ source, raw_request });
     await logEvent({ pipeline_id: pipeline.id, event_type: 'created', payload: { source } });
 
-    try {
-      // ─── Stage 1: Triage ────────────────────────────────────────────
-      await logEvent({ pipeline_id: pipeline.id, event_type: 'stage_started', stage: 'triage' });
+    fireAndForget(`pipeline-${pipeline.id}`, () => runFromTriage(pipeline));
 
-      const triage = await runTriage(raw_request);
+    return reply.code(202).send({
+      pipeline_id: pipeline.id,
+      status: pipeline.status,
+      current_stage: pipeline.current_stage,
+      pipeline,
+    });
+  });
 
-      const triagedRow = await updatePipeline(pipeline.id, {
-        triage_payload: triage.data,
-        session_id: triage.sessionId,
-      });
+  app.get('/requests/:id', async (req, reply) => {
+    const { id } = req.params as PipelineParams;
+    const pipeline = await getPipeline(id);
+    if (!pipeline) return reply.code(404).send({ error: 'pipeline not found' });
 
-      await logEvent({
-        pipeline_id: pipeline.id,
-        event_type: 'stage_completed',
-        stage: 'triage',
-        payload: triage.data,
-      });
-
-      // ─── Stage 2: blocker gate → Router (or pause) ──────────────────
-      const outcome = await processPipelineFromTriage(triagedRow, triage);
-      return reply.send(outcome);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await updatePipeline(pipeline.id, { status: 'failed' }).catch(() => {});
-      await logEvent({
-        pipeline_id: pipeline.id,
-        event_type: 'stage_failed',
-        stage: pipeline.current_stage ?? 'unknown',
-        payload: { error: message },
-      }).catch(() => {});
-      return reply.code(500).send({ error: message, pipeline_id: pipeline.id });
-    }
+    const events = await recentEvents(id);
+    return reply.send({ pipeline, events });
   });
 };
+
+/**
+ * Fire-and-forget wrapper. The inner work() is expected to swallow its own
+ * errors and log to pipeline_events. This catch is a safety net for genuinely
+ * unexpected bugs; it just prevents an unhandled rejection from crashing the
+ * process.
+ */
+function fireAndForget(label: string, work: () => Promise<void>): void {
+  void work().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error(`[fireAndForget:${label}]`, err);
+  });
+}
+
+async function runFromTriage(pipeline: PipelineRow): Promise<void> {
+  try {
+    await logEvent({ pipeline_id: pipeline.id, event_type: 'stage_started', stage: 'triage' });
+
+    const triage = await runTriage(pipeline.raw_request);
+
+    const triagedRow = await updatePipeline(pipeline.id, {
+      triage_payload: triage.data,
+      session_id: triage.sessionId,
+    });
+
+    await logEvent({
+      pipeline_id: pipeline.id,
+      event_type: 'stage_completed',
+      stage: 'triage',
+      payload: triage.data,
+    });
+
+    await processPipelineFromTriage(triagedRow, triage);
+  } catch (err) {
+    await markFailed(pipeline.id, pipeline.current_stage, err);
+  }
+}
+
+async function markFailed(
+  pipelineId: string,
+  stage: string | null | undefined,
+  err: unknown,
+): Promise<void> {
+  const message = err instanceof Error ? err.message : String(err);
+  await updatePipeline(pipelineId, { status: 'failed' }).catch(() => {});
+  await logEvent({
+    pipeline_id: pipelineId,
+    event_type: 'stage_failed',
+    stage: stage ?? 'unknown',
+    payload: { error: message },
+  }).catch(() => {});
+}
+
