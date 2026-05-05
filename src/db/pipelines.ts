@@ -1,5 +1,6 @@
 import { supabase } from './client.js';
 import type { TriagePayload } from '../agents/triage-agent.js';
+import type { RouterPayload } from '../agents/router-agent.js';
 import type { WorkIdentifierPayload } from '../agents/work-identifier-agent.js';
 import type { ExecutionPayload } from '../agents/execution-agent.js';
 import type { DocumentationPayload } from '../agents/documentation-agent.js';
@@ -20,6 +21,7 @@ export interface PipelineRow {
   org_type: string | null;
   dev_hub_alias: string | null;
   triage_payload: TriagePayload | null;
+  routed_payload: RouterPayload | null;
   work_identifier_payload: WorkIdentifierPayload | null;
   execution_payload: ExecutionPayload | null;
   documentation_payload: DocumentationPayload | null;

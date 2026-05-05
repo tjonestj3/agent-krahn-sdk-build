@@ -137,6 +137,7 @@ async function runRouterStage(
     dev_hub_alias: routed.data.recommended_dev_hub,
     org_type: 'scratch',
     session_id: routed.sessionId,
+    routed_payload: routed.data,
   });
 
   await logEvent({
@@ -206,21 +207,18 @@ export async function processPipelineFromWorkIdentifier(
       `pipeline ${pipeline.id} has no triage_payload — cannot resume work_identifier`,
     );
   }
-  if (!pipeline.client_id && !pipeline.dev_hub_alias) {
+  if (!pipeline.routed_payload) {
     throw new Error(
-      `pipeline ${pipeline.id} has no router output — cannot resume work_identifier`,
+      `pipeline ${pipeline.id} has no routed_payload — cannot resume work_identifier`,
     );
   }
 
-  const routed: RouterPayload = {
-    client: pipeline.client_id,
-    confidence: 'high',
-    reasoning: 'restored from pipeline row on resume',
-    recommended_dev_hub: pipeline.dev_hub_alias,
-    options: [],
-  };
-
-  return continueAfterWorkIdentifier(pipeline, pipeline.triage_payload, routed, wi.data);
+  return continueAfterWorkIdentifier(
+    pipeline,
+    pipeline.triage_payload,
+    pipeline.routed_payload,
+    wi.data,
+  );
 }
 
 async function continueAfterWorkIdentifier(
@@ -345,24 +343,16 @@ export async function processPipelineFromExecution(
       `pipeline ${pipeline.id} missing prior payloads — cannot resume execution`,
     );
   }
-  if (!pipeline.client_id || !pipeline.dev_hub_alias) {
+  if (!pipeline.routed_payload) {
     throw new Error(
-      `pipeline ${pipeline.id} missing router output — cannot resume execution`,
+      `pipeline ${pipeline.id} missing routed_payload — cannot resume execution`,
     );
   }
-
-  const routed: RouterPayload = {
-    client: pipeline.client_id,
-    confidence: 'high',
-    reasoning: 'restored from pipeline row on resume',
-    recommended_dev_hub: pipeline.dev_hub_alias,
-    options: [],
-  };
 
   return finalizeAfterExecution(
     pipeline,
     pipeline.triage_payload,
-    routed,
+    pipeline.routed_payload,
     pipeline.work_identifier_payload,
     exec.data,
   );
@@ -505,24 +495,20 @@ async function runDiffGuard(
 
   await notifyAwaitingInput(paused, 'execution', blockers, { blocked_on: reason });
 
-  if (!paused.triage_payload || !paused.work_identifier_payload) {
+  if (
+    !paused.triage_payload ||
+    !paused.work_identifier_payload ||
+    !paused.routed_payload
+  ) {
     throw new Error(`pipeline ${pipeline.id} missing payloads after diff guard`);
   }
-
-  const routed: RouterPayload = {
-    client: paused.client_id,
-    confidence: 'high',
-    reasoning: 'restored from pipeline row after diff-guard pause',
-    recommended_dev_hub: paused.dev_hub_alias,
-    options: [],
-  };
 
   return {
     status: 'awaiting_input',
     stage: 'execution',
     pipeline: paused,
     triage: paused.triage_payload,
-    routed,
+    routed: paused.routed_payload,
     work_identifier: paused.work_identifier_payload,
     execution: { ...exec, status: 'needs_input', pr_url: null, blocked_on: reason },
     blockers,
@@ -559,6 +545,7 @@ export async function processPipelineFromMerge(
   if (
     !pipeline.client_id ||
     !pipeline.triage_payload ||
+    !pipeline.routed_payload ||
     !pipeline.work_identifier_payload ||
     !pipeline.execution_payload
   ) {
@@ -574,13 +561,7 @@ export async function processPipelineFromMerge(
     );
   }
 
-  const routed: RouterPayload = {
-    client: pipeline.client_id,
-    confidence: 'high',
-    reasoning: 'restored from pipeline row for documentation stage',
-    recommended_dev_hub: pipeline.dev_hub_alias,
-    options: [],
-  };
+  const routed = pipeline.routed_payload;
 
   const mergedAt = pipeline.merged_at ?? new Date().toISOString();
   const dateOnly = mergedAt.slice(0, 10);
