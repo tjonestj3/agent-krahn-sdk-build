@@ -29,6 +29,7 @@ import {
   resetFeatureBranch,
   type DiffViolation,
 } from './execution/guard.js';
+import { withClientRepoLock } from './execution/repo-lock.js';
 import { loadClientConfig } from './config/clients.js';
 import { env } from './config/env.js';
 import {
@@ -246,6 +247,10 @@ async function runExecutionStage(
   routed: RouterPayload,
   wi: WorkIdentifierPayload,
 ): Promise<OrchestratorOutcome> {
+  if (!pipeline.client_id) {
+    throw new Error(`pipeline ${pipeline.id} has no client_id; cannot lock repo`);
+  }
+
   await updatePipeline(pipeline.id, { current_stage: 'execution' });
   await logEvent({
     pipeline_id: pipeline.id,
@@ -253,48 +258,51 @@ async function runExecutionStage(
     stage: 'execution',
   });
 
-  // Pre-agent setup: branch, scratch org, source push, target-org config.
-  // If this throws, mark the pipeline failed at this stage.
-  const ctx = await setupExecutionEnvironment(pipeline, wi);
+  // Serialize active execution runs per client repo so two pipelines never
+  // fight over the working tree, the branch, or .sf/config.json. A pipeline
+  // that pauses to awaiting_input releases the lock; resume re-acquires.
+  return withClientRepoLock(pipeline.client_id, async () => {
+    const ctx = await setupExecutionEnvironment(pipeline, wi);
 
-  const afterSetup = await updatePipeline(pipeline.id, {
-    scratch_org_alias: ctx.scratch_org_alias,
-    branch_name: ctx.branch_name,
-  });
-
-  await logEvent({
-    pipeline_id: pipeline.id,
-    event_type: 'execution_setup_done',
-    stage: 'execution',
-    payload: {
+    const afterSetup = await updatePipeline(pipeline.id, {
       scratch_org_alias: ctx.scratch_org_alias,
       branch_name: ctx.branch_name,
-      scratch_org_id: ctx.scratch_org_id,
-    },
+    });
+
+    await logEvent({
+      pipeline_id: pipeline.id,
+      event_type: 'execution_setup_done',
+      stage: 'execution',
+      payload: {
+        scratch_org_alias: ctx.scratch_org_alias,
+        branch_name: ctx.branch_name,
+        scratch_org_id: ctx.scratch_org_id,
+      },
+    });
+
+    const exec = await runExecution(
+      pipeline.raw_request,
+      triage,
+      routed,
+      wi,
+      ctx,
+    );
+
+    const afterExec = await updatePipeline(pipeline.id, {
+      execution_payload: exec.data,
+      session_id: exec.sessionId,
+      pr_url: exec.data.pr_url ?? null,
+    });
+
+    await logEvent({
+      pipeline_id: pipeline.id,
+      event_type: 'stage_completed',
+      stage: 'execution',
+      payload: exec.data,
+    });
+
+    return finalizeAfterExecution(afterExec, triage, routed, wi, exec.data);
   });
-
-  const exec = await runExecution(
-    pipeline.raw_request,
-    triage,
-    routed,
-    wi,
-    ctx,
-  );
-
-  const afterExec = await updatePipeline(pipeline.id, {
-    execution_payload: exec.data,
-    session_id: exec.sessionId,
-    pr_url: exec.data.pr_url ?? null,
-  });
-
-  await logEvent({
-    pipeline_id: pipeline.id,
-    event_type: 'stage_completed',
-    stage: 'execution',
-    payload: exec.data,
-  });
-
-  return finalizeAfterExecution(afterExec, triage, routed, wi, exec.data);
 }
 
 /**

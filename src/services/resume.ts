@@ -16,6 +16,7 @@ import {
   processPipelineFromExecution,
   rehydrateExecutionContext,
 } from '../orchestrator.js';
+import { withClientRepoLock } from '../execution/repo-lock.js';
 import { notifyFailed } from '../slack/notifier.js';
 
 export type ResumableStage = 'triage' | 'work_identifier' | 'execution';
@@ -125,20 +126,25 @@ async function runResume(
     }
 
     // stage === 'execution'
-    const ctx = await rehydrateExecutionContext(claimed);
-    const exec = await resumeExecution(claimed.session_id!, answer, ctx);
-    const execRow = await updatePipeline(claimed.id, {
-      execution_payload: exec.data,
-      session_id: exec.sessionId,
-      pr_url: exec.data.pr_url ?? claimed.pr_url ?? null,
+    if (!claimed.client_id) {
+      throw new Error(`pipeline ${claimed.id} has no client_id; cannot lock repo`);
+    }
+    await withClientRepoLock(claimed.client_id, async () => {
+      const ctx = await rehydrateExecutionContext(claimed);
+      const exec = await resumeExecution(claimed.session_id!, answer, ctx);
+      const execRow = await updatePipeline(claimed.id, {
+        execution_payload: exec.data,
+        session_id: exec.sessionId,
+        pr_url: exec.data.pr_url ?? claimed.pr_url ?? null,
+      });
+      await logEvent({
+        pipeline_id: claimed.id,
+        event_type: 'stage_completed',
+        stage: 'execution',
+        payload: exec.data,
+      });
+      await processPipelineFromExecution(execRow, exec);
     });
-    await logEvent({
-      pipeline_id: claimed.id,
-      event_type: 'stage_completed',
-      stage: 'execution',
-      payload: exec.data,
-    });
-    await processPipelineFromExecution(execRow, exec);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const failed = await updatePipeline(claimed.id, { status: 'failed' }).catch(() => null);
