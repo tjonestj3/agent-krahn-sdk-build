@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { resolve, join } from 'node:path';
+import { renderMarkdown, splitFrontmatter, escapeHtml } from './lib/markdown.js';
 
 const args = process.argv.slice(2);
 const clientArg = args.find((a) => !a.startsWith('--'));
@@ -28,7 +29,6 @@ if (!existsSync(SOURCE)) {
 interface BuildRecord {
   filename: string;
   frontmatter: Record<string, string | number | null>;
-  body: string;
   bodyHtml: string;
 }
 
@@ -43,7 +43,6 @@ const records: BuildRecord[] = files.map((filename) => {
   return {
     filename,
     frontmatter,
-    body,
     bodyHtml: renderMarkdown(body),
   };
 });
@@ -52,207 +51,6 @@ if (!existsSync(OUT_DIR)) mkdirSync(OUT_DIR, { recursive: true });
 writeFileSync(OUT, renderShell(clientArg, records));
 console.log(`Wrote ${OUT} (${records.length} build${records.length === 1 ? '' : 's'}).`);
 console.log(`Open: file://${OUT}`);
-
-// ============================================================
-// Frontmatter parser (YAML-lite — supports key: value lines only)
-// ============================================================
-
-function splitFrontmatter(raw: string): {
-  frontmatter: Record<string, string | number | null>;
-  body: string;
-} {
-  const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
-  if (!m) return { frontmatter: {}, body: raw };
-  const fmText = m[1] ?? '';
-  const body = m[2] ?? '';
-  const fm: Record<string, string | number | null> = {};
-  for (const line of fmText.split('\n')) {
-    const lm = line.match(/^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$/);
-    if (!lm) continue;
-    const key = lm[1]!;
-    const val = (lm[2] ?? '').trim();
-    if (val === 'null' || val === '') {
-      fm[key] = null;
-    } else if (/^-?\d+$/.test(val)) {
-      fm[key] = Number(val);
-    } else {
-      fm[key] = val.replace(/^["']|["']$/g, '');
-    }
-  }
-  return { frontmatter: fm, body };
-}
-
-// ============================================================
-// Tiny markdown renderer (subset matching the build-record template)
-// ============================================================
-
-function renderMarkdown(md: string): string {
-  const lines = md.split('\n');
-  const out: string[] = [];
-  let i = 0;
-
-  while (i < lines.length) {
-    const line = lines[i] ?? '';
-
-    // Fenced code block
-    if (/^```/.test(line)) {
-      const lang = line.slice(3).trim();
-      const buf: string[] = [];
-      i += 1;
-      while (i < lines.length && !/^```/.test(lines[i] ?? '')) {
-        buf.push(lines[i] ?? '');
-        i += 1;
-      }
-      i += 1;
-      out.push(
-        `<pre class="code"><code class="lang-${escapeHtml(lang)}">${escapeHtml(buf.join('\n'))}</code></pre>`,
-      );
-      continue;
-    }
-
-    // ATX heading
-    const hMatch = line.match(/^(#{1,6})\s+(.*)$/);
-    if (hMatch) {
-      const level = hMatch[1]!.length;
-      out.push(`<h${level}>${renderInline(hMatch[2]!.trim())}</h${level}>`);
-      i += 1;
-      continue;
-    }
-
-    // Horizontal rule
-    if (/^---+\s*$/.test(line)) {
-      out.push('<hr>');
-      i += 1;
-      continue;
-    }
-
-    // Blockquote (consecutive `> ...` lines)
-    if (/^>\s?/.test(line)) {
-      const buf: string[] = [];
-      while (i < lines.length && /^>\s?/.test(lines[i] ?? '')) {
-        buf.push((lines[i] ?? '').replace(/^>\s?/, ''));
-        i += 1;
-      }
-      out.push(
-        `<blockquote>${buf.map((l) => renderInline(l)).join('<br>')}</blockquote>`,
-      );
-      continue;
-    }
-
-    // Pipe table
-    if (/^\|.*\|\s*$/.test(line) && /^\|[\s:|-]+\|\s*$/.test(lines[i + 1] ?? '')) {
-      const header = splitTableRow(line);
-      i += 2; // skip separator
-      const rows: string[][] = [];
-      while (i < lines.length && /^\|.*\|\s*$/.test(lines[i] ?? '')) {
-        rows.push(splitTableRow(lines[i] ?? ''));
-        i += 1;
-      }
-      out.push(
-        `<table><thead><tr>${header.map((c) => `<th>${renderInline(c)}</th>`).join('')}</tr></thead><tbody>${rows
-          .map(
-            (r) =>
-              `<tr>${r.map((c) => `<td>${renderInline(c)}</td>`).join('')}</tr>`,
-          )
-          .join('')}</tbody></table>`,
-      );
-      continue;
-    }
-
-    // Unordered list
-    if (/^\s*[-*+]\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*[-*+]\s+/.test(lines[i] ?? '')) {
-        items.push((lines[i] ?? '').replace(/^\s*[-*+]\s+/, ''));
-        i += 1;
-      }
-      out.push(`<ul>${items.map((it) => `<li>${renderInline(it)}</li>`).join('')}</ul>`);
-      continue;
-    }
-
-    // Ordered list
-    if (/^\s*\d+\.\s+/.test(line)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i] ?? '')) {
-        items.push((lines[i] ?? '').replace(/^\s*\d+\.\s+/, ''));
-        i += 1;
-      }
-      out.push(`<ol>${items.map((it) => `<li>${renderInline(it)}</li>`).join('')}</ol>`);
-      continue;
-    }
-
-    // Blank line — flush
-    if (line.trim() === '') {
-      i += 1;
-      continue;
-    }
-
-    // Paragraph (consume until blank or block-level)
-    const buf: string[] = [line];
-    i += 1;
-    while (i < lines.length && (lines[i] ?? '').trim() !== '' && !isBlockStart(lines[i] ?? '')) {
-      buf.push(lines[i] ?? '');
-      i += 1;
-    }
-    out.push(`<p>${buf.map((l) => renderInline(l)).join(' ')}</p>`);
-  }
-
-  return out.join('\n');
-}
-
-function isBlockStart(line: string): boolean {
-  return (
-    /^#{1,6}\s+/.test(line) ||
-    /^\s*[-*+]\s+/.test(line) ||
-    /^\s*\d+\.\s+/.test(line) ||
-    /^>\s?/.test(line) ||
-    /^```/.test(line) ||
-    /^---+\s*$/.test(line) ||
-    /^\|.*\|\s*$/.test(line)
-  );
-}
-
-function splitTableRow(line: string): string[] {
-  return line
-    .replace(/^\||\|$/g, '')
-    .split('|')
-    .map((c) => c.trim());
-}
-
-function renderInline(s: string): string {
-  // Escape first, then re-introduce markup with placeholders to avoid
-  // double-escaping inside code spans.
-  let out = escapeHtml(s);
-
-  // Inline code (greedy single-line)
-  out = out.replace(/`([^`]+)`/g, (_, code) => `<code>${code}</code>`);
-
-  // Links [text](url)
-  out = out.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, text, url) => {
-    const safeUrl = url.replace(/"/g, '&quot;');
-    return `<a href="${safeUrl}" target="_blank" rel="noopener">${text}</a>`;
-  });
-
-  // Bold **text**
-  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-
-  // Italic *text* (after bold so they don't conflict)
-  out = out.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
-
-  return out;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-// ============================================================
-// HTML shell — single self-contained file with all build data inline
-// ============================================================
 
 function renderShell(client: string, records: BuildRecord[]): string {
   const totalPoints = records.reduce(
@@ -272,11 +70,7 @@ function renderShell(client: string, records: BuildRecord[]): string {
     )
     .join('\n');
 
-  const recordsJson = JSON.stringify(records.map((r) => ({
-    filename: r.filename,
-    frontmatter: r.frontmatter,
-    bodyHtml: r.bodyHtml,
-  }))).replace(/</g, '\\u003c');
+  const recordsJson = JSON.stringify(records).replace(/</g, '\\u003c');
 
   return `<!doctype html>
 <html lang="en">
@@ -380,7 +174,6 @@ function renderShell(client: string, records: BuildRecord[]): string {
     });
   });
 
-  // Open via hash (#filename) or first record
   const hash = decodeURIComponent(location.hash.slice(1));
   const initialIdx = hash ? RECORDS.findIndex((r) => r.filename === hash) : 0;
   if (RECORDS.length > 0) show(initialIdx >= 0 ? initialIdx : 0);

@@ -1,0 +1,95 @@
+---
+title: Agent specs
+slug: agents
+group: Technical
+order: 2
+---
+
+# Agent specs
+
+Five agents. Each is a fresh `query()` invocation against the Anthropic SDK with its own system prompt. No subagent wrapper, no `Task` tool — the Fastify orchestrator is the conductor and calls each stage in sequence.
+
+Common runtime options (in `src/agents/runner.ts`):
+
+- `mcpServers: {}` + `strictMcpConfig: true` — no inherited MCPs land in the agent's runtime.
+- `settingSources: []` — no inherited project settings.
+- `permissionMode: 'bypassPermissions'` + `allowDangerouslySkipPermissions: true` — the orchestrator runs with no TTY; permission prompts would deadlock.
+- `tools: [...]` + `allowedTools: [...]` — only the listed tools are available.
+
+## Triage
+
+| | |
+|---|---|
+| File | `src/agents/triage-agent.ts` |
+| Model | `claude-haiku-4-5-20251001` |
+| Tools | none |
+| Max turns | 3 |
+| Output | `TriagePayload` |
+
+Pure parsing. Returns `summary`, `change_type` (one of a small enum), `salesforce_objects[]`, `urgency`, `deadline`, `client_hints[]`, `attachments`, `ambiguities[]`. Crucially: it does NOT canonicalize the client and does NOT propose any work. It only flags. Access-grant intent is left as intent, never restated as "update Profile X".
+
+Pauses when `ambiguities[].blocker === true`.
+
+## Router
+
+| | |
+|---|---|
+| File | `src/agents/router-agent.ts` |
+| Model | `claude-sonnet-4-6` |
+| Tools | `Read`, `Glob`, `Bash` (limited) |
+| Max turns | small |
+| Output | `RouterPayload` |
+
+Identifies the canonical client and the Dev Hub. Pre-baked context: `bin/sf-orgs-summary.sh` provides a token-stripped org list, and the agent globs `~/vault/clients/*/_index.md`. **Dev-Hub-only**: the prompt forbids recommending non-Dev-Hub orgs.
+
+Does NOT pause. At any confidence level it returns its best recommendation; downstream stages may flag low confidence as a blocker.
+
+## Work Identifier
+
+| | |
+|---|---|
+| File | `src/agents/work-identifier-agent.ts` |
+| Model | `claude-sonnet-4-6` |
+| Tools | none |
+| Max turns | 3 |
+| Output | `WorkIdentifierPayload` |
+
+Refines the coarse `change_type` into a precise `work_classification`. Enumerates `metadata_changes[]` (object/field/operation/notes) and `permission_grants[]` (per-permset, with strategy + field + object grants). Sizes via Fibonacci `story_points`. Captures `complexity_factors[]` and a 2–4 sentence `execution_notes` paragraph aimed at the next agent.
+
+Reads the per-client role permset registry from the user prompt (built from `loadClientConfig().permission_sets`). Required to extend an existing role permset before proposing a new one. `permission_strategy: "create_new"` always produces a blocker ambiguity.
+
+Pauses when `ambiguities[].blocker === true`.
+
+## Execution
+
+| | |
+|---|---|
+| File | `src/agents/execution-agent.ts` |
+| Model | `claude-sonnet-4-6` |
+| Tools | `Read`, `Write`, `Edit`, `Glob`, `Bash` |
+| Max turns | 60 |
+| `cwd` | client metadata repo |
+| Output | `ExecutionPayload` |
+
+The first agent with real-world side effects. Receives the prior payloads + an `ExecutionContext` (branch name, scratch alias, scratch login URL, repo path) prepared by the orchestrator. Walks the spec: edits XML, deploys, retries up to 3 times per failure, runs tests, commits to a feature branch, opens a PR via `gh`.
+
+Returns either `status: "pr_opened"` (success) or `status: "needs_input"` (3 retries exhausted). On `needs_input`, the agent's `attempts[]` and a fresh `ambiguities[]` capture the failure mode for the human.
+
+The agent has hard prompt rules forbidding: pushing to/checking out main, targeting any org but the scratch alias, `sf org delete`/`org logout`/`git reset --hard`/`git push --force`, edits outside `force-app/`, and **any edit to profile metadata**.
+
+After a successful PR, the orchestrator's diff guard re-checks for forbidden paths; a violating PR is closed, the branch is reset, and the pipeline pauses for retry.
+
+## Documentation
+
+| | |
+|---|---|
+| File | `src/agents/documentation-agent.ts` |
+| Model | `claude-sonnet-4-6` |
+| Tools | `Read`, `Glob`, `Write`, `Bash` (for `gh pr view/diff`) |
+| Max turns | 15 |
+| `cwd` | client metadata repo |
+| Output | `DocumentationPayload` |
+
+Triggered by the GitHub PR-merge webhook. Reads the merged PR via `gh`, then writes a single markdown file to `~/vault/clients/<client>/changes/<date>-<slug>.md` following a fixed template (frontmatter + summary + schema/access/code sections + verification + rollback + build trail + decisions).
+
+Forbidden from editing code, opening PRs, or running mutating `git` commands. Documentation only.

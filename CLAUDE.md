@@ -5,6 +5,7 @@ Backend pipeline that routes Salesforce client requests through specialized AI a
 **Source of truth — read these first:**
 - `krahnborn-os-architecture.md` — vision, pipeline stages, tech stack, phased rollout
 - `krahnborn-os-phase-0-plan.md` — actionable step-by-step build plan for Phase 0
+- `wiki/system.html` (regenerate via `npm run wiki:system`) — interactive consultant-style site documenting the whole build (overview, agents, routes, DB, hard rules, ops). Source MD lives in `docs/system-wiki/`.
 
 This file is just session-state and decisions made outside those docs.
 
