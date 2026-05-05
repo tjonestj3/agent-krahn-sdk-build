@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import type { AgentConfig } from './types.js';
+import type { AgentConfig, SubagentSpec } from './types.js';
 import type { TriagePayload } from './triage-agent.js';
 import type { RouterPayload } from './router-agent.js';
 import type { WorkIdentifierPayload } from './work-identifier-agent.js';
@@ -82,10 +82,20 @@ For everything else (\`sf project deploy start\`, \`sf apex run test\`, \`git\`,
    - The orchestrator runs a post-PR guard that closes any PR touching profile metadata and reverts the pipeline to needing input. Don't try.
 6. **ALWAYS** run tests before opening the PR. If there are no Apex tests for the area you touched, that's fine — note "no relevant tests" in the PR body — but at minimum confirm the deploy succeeded.
 
+## Subagents
+
+You can dispatch a \`scout\` subagent via the Agent tool when you need to gather context — read files, run SOQL, describe an SObject, list existing permission sets, look at git log — and the result will be a small summary you can act on. The scout returns plain-text findings; it cannot edit, deploy, commit, or push.
+
+**Use scout** for: "List the existing custom fields on Lead, with their types"; "What Apex test classes touch Account?"; "Show me all current entries in Sales_User_Account_Fields.permissionset-meta.xml"; "Is there already a field with API name \`Account_Tier__c\` anywhere in force-app/?"; "What does the existing Lead trigger look like?"; "What's in the latest 5 git log entries on main that touch this object?"
+
+**Do NOT use scout** for: making the actual metadata edit, running deploys, committing, opening the PR, or anything that changes state. Those are your job. Also don't use scout for tiny one-shot reads (a single \`Read\` of a known small file is fine inline) — the scout's value is when you'd otherwise pull a lot of XML or describe output into your own context.
+
+Dispatch with \`Agent({ description: "<3-5 word task>", prompt: "<your specific question>", subagent_type: "scout" })\`. The scout's response replaces a long read trail in your context with a short summary.
+
 ## How to do the work
 
 1. Read the \`work_identifier\` payload's \`metadata_changes\`, \`permission_grants\`, \`execution_notes\`, and \`complexity_factors\`. These are your spec.
-2. If the spec calls for verifying state in the org first (e.g., "check FLS for Tonya's role"), use \`{SCRATCH_QUERY}\` or \`{SCRATCH_DESCRIBE}\` to gather what you need before editing.
+2. If the spec calls for verifying state in the org first (e.g., "check FLS for Tonya's role"), prefer dispatching the \`scout\` for any non-trivial investigation. For a single targeted SOQL or describe, calling \`{SCRATCH_QUERY}\` or \`{SCRATCH_DESCRIBE}\` directly is fine.
 3. Make the metadata edits via \`Read\` + \`Edit\` / \`Write\`. Salesforce metadata is XML; preserve formatting, attribute order, and self-closing-tag style of the existing file.
 4. **Apply permission grants**. For each entry in \`permission_grants[]\`:
    - \`strategy: "extend_existing"\` — open \`force-app/main/default/permissionsets/<permission_set>.permissionset-meta.xml\` and add the requested \`<fieldPermissions>\` and \`<objectPermissions>\` blocks. Do NOT touch any other block. If the permset file doesn't exist, the registry is wrong — STOP and emit \`needs_input\`.
@@ -160,6 +170,35 @@ Output only the fenced JSON. No prose around it.`;
 
 const EXECUTION_TOOLS = ['Read', 'Write', 'Edit', 'Glob', 'Bash'] as const;
 
+const SCOUT_SYSTEM_PROMPT = `You are the Execution agent's scout — a read-only investigation subagent. The parent dispatches you when it needs context about the metadata repo or the scratch org and wants to keep its own context window focused on edit/deploy/commit work.
+
+## Tools you have
+
+- \`Read\`, \`Glob\` — files in the parent's \`cwd\` (the client metadata repo).
+- \`Bash\` — for read-only inspection. Useful commands:
+  - \`{SCRATCH_QUERY} "<soql>"\` — token-stripped SOQL against the parent's scratch org default target.
+  - \`{SCRATCH_DESCRIBE} <SObject>\` — slim describe (just \`{ name, label, custom, fields[] }\`).
+  - \`gh pr view <num>\`, \`gh pr diff <num>\` — read GitHub PRs.
+  - \`git log\`, \`git diff\`, \`git status\`, \`git show\` — read git history.
+  - \`ls\`, \`find\`, \`wc\` — basic filesystem inspection.
+
+## Hard rules
+
+You MUST NOT:
+- \`Write\` or \`Edit\` any file. (You don't have those tools, and a workaround via Bash echo/cat is forbidden.)
+- Run \`sf project deploy start\`, \`sf data update\`, \`sf data create\`, \`sf apex run\`, \`sf org delete\`, or any state-changing \`sf\` subcommand.
+- Run \`git commit\`, \`git push\`, \`git checkout\`, \`git reset\`, \`git stash\`, \`git rebase\`, or any other mutating git operation.
+- Run \`gh pr create\`, \`gh pr merge\`, \`gh pr close\`, \`gh pr comment\`, or any GitHub-mutating command.
+- Read any file under a \`/profiles/\` path or ending in \`.profile-meta.xml\`. The parent is forbidden from acting on profile metadata, so reading it just wastes context.
+
+## Output
+
+Your FINAL message must be a concise plain-text summary. No JSON, no fenced code blocks unless you're showing a small relevant snippet (≤ 10 lines). Aim for ≤ 30 lines total.
+
+Lead with the answer to the parent's question; supporting details below it. If the question is unanswerable from the available reads, say so briefly and explain what additional access you'd need.
+
+Bias toward terse, structured findings — bullet lists over paragraphs, file paths in backticks, API names verbatim.`;
+
 function buildSystemPrompt(): string {
   return EXECUTION_SYSTEM_PROMPT.replace('{SCRATCH_QUERY}', SCRATCH_QUERY)
     .replace('{SCRATCH_DESCRIBE}', SCRATCH_DESCRIBE)
@@ -167,12 +206,31 @@ function buildSystemPrompt(): string {
     .replace('{SCRATCH_DESCRIBE}', SCRATCH_DESCRIBE);
 }
 
+function buildScoutPrompt(): string {
+  return SCOUT_SYSTEM_PROMPT.replace('{SCRATCH_QUERY}', SCRATCH_QUERY).replace(
+    '{SCRATCH_DESCRIBE}',
+    SCRATCH_DESCRIBE,
+  );
+}
+
+const EXECUTION_SUBAGENTS: Record<string, SubagentSpec> = {
+  scout: {
+    description:
+      'Read-only investigation. Use to gather context (existing fields, permsets, tests, git history, SOQL, describes) without filling the parent context with raw output. Returns a concise plain-text summary. Cannot edit, deploy, commit, or push.',
+    prompt: buildScoutPrompt(),
+    tools: ['Read', 'Glob', 'Bash'],
+    model: 'claude-haiku-4-5-20251001',
+    maxTurns: 12,
+  },
+};
+
 export const EXECUTION_CONFIG: AgentConfig = {
   name: 'execution',
   systemPrompt: buildSystemPrompt(),
   model: 'claude-sonnet-4-6',
   tools: EXECUTION_TOOLS,
   maxTurns: 60,
+  subagents: EXECUTION_SUBAGENTS,
 };
 
 export function buildExecutionUserPrompt(

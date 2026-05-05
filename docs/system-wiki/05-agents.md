@@ -66,7 +66,8 @@ Pauses when `ambiguities[].blocker === true`.
 |---|---|
 | File | `src/agents/execution-agent.ts` |
 | Model | `claude-sonnet-4-6` |
-| Tools | `Read`, `Write`, `Edit`, `Glob`, `Bash` |
+| Tools | `Read`, `Write`, `Edit`, `Glob`, `Bash`, `Agent` (for scout dispatch) |
+| Subagents | `scout` (read-only investigation, Haiku 4.5, 12 turns) |
 | Max turns | 60 |
 | `cwd` | client metadata repo |
 | Output | `ExecutionPayload` |
@@ -78,6 +79,14 @@ Returns either `status: "pr_opened"` (success) or `status: "needs_input"` (3 ret
 The agent has hard prompt rules forbidding: pushing to/checking out main, targeting any org but the scratch alias, `sf org delete`/`org logout`/`git reset --hard`/`git push --force`, edits outside `force-app/`, and **any edit to profile metadata**.
 
 After a successful PR, the orchestrator's diff guard re-checks for forbidden paths; a violating PR is closed, the branch is reset, and the pipeline pauses for retry.
+
+### Scout subagent
+
+Execution can dispatch a `scout` subagent via the `Agent` tool. The scout has only `Read`, `Glob`, and `Bash` (no `Write` or `Edit`), runs on Haiku 4.5 with a 12-turn budget, and is forbidden from any state-changing operation (no deploys, no commits, no PRs, no profile reads).
+
+Use cases: enumerating existing fields on an SObject, listing entries in a permission set XML, finding existing Apex test classes that touch a given object, scanning recent `git log` for related changes, running a SOQL or describe whose raw output would otherwise be 50KB+ in the parent's context.
+
+The scout returns a concise plain-text summary (≤ 30 lines), preserving the parent's context window for the actual edit/deploy/commit work. Subagent token + cost usage rolls up into the parent's stage telemetry.
 
 ## Documentation
 

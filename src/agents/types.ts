@@ -1,3 +1,11 @@
+export interface SubagentSpec {
+  description: string;
+  prompt: string;
+  tools: readonly string[];
+  model: string;
+  maxTurns?: number;
+}
+
 export interface AgentConfig {
   name: string;
   systemPrompt: string;
@@ -5,6 +13,7 @@ export interface AgentConfig {
   tools: readonly string[];
   maxTurns: number;
   cwd?: string;
+  subagents?: Record<string, SubagentSpec>;
 }
 
 export interface AgentTelemetry {

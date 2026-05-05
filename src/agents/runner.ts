@@ -45,12 +45,34 @@ export async function runAgent<T>(
   userPrompt: string,
   runOptions?: RunOptions,
 ): Promise<AgentResult<T>> {
+  // If the agent declares subagents, give the parent the `Agent` tool so it
+  // can dispatch via Task — and pass each spec through as an AgentDefinition.
+  // Subagent specs are converted to the shape the SDK expects; no MCPs and
+  // no settings inheritance, same as the parent.
+  const hasSubagents =
+    config.subagents !== undefined && Object.keys(config.subagents).length > 0;
+  const tools = hasSubagents ? [...config.tools, 'Agent'] : [...config.tools];
+  const agents = hasSubagents
+    ? Object.fromEntries(
+        Object.entries(config.subagents!).map(([name, spec]) => [
+          name,
+          {
+            description: spec.description,
+            prompt: spec.prompt,
+            tools: [...spec.tools],
+            model: spec.model,
+            ...(spec.maxTurns !== undefined ? { maxTurns: spec.maxTurns } : {}),
+          },
+        ]),
+      )
+    : undefined;
+
   const response = query({
     prompt: userPrompt,
     options: {
       systemPrompt: config.systemPrompt,
-      tools: [...config.tools],
-      allowedTools: [...config.tools],
+      tools,
+      allowedTools: tools,
       mcpServers: {},
       strictMcpConfig: true,
       settingSources: [],
@@ -58,6 +80,7 @@ export async function runAgent<T>(
       allowDangerouslySkipPermissions: true,
       maxTurns: config.maxTurns,
       model: config.model,
+      ...(agents ? { agents } : {}),
       ...(config.cwd ? { cwd: config.cwd } : {}),
       ...(runOptions?.resume ? { resume: runOptions.resume } : {}),
     },
