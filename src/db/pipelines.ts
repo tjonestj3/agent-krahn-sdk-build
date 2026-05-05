@@ -78,6 +78,24 @@ export async function getPipeline(id: string): Promise<PipelineRow | null> {
 }
 
 /**
+ * Look up the pipeline whose notifier-DM thread root matches the given
+ * Slack thread_ts. Used by the inbound Slack handler to route a thread
+ * reply back to the right paused pipeline.
+ */
+export async function getPipelineBySlackThread(
+  threadTs: string,
+): Promise<PipelineRow | null> {
+  const { data, error } = await supabase
+    .from('pipelines')
+    .select()
+    .eq('slack_message_ts', threadTs)
+    .maybeSingle();
+
+  if (error) throw new Error(`getPipelineBySlackThread: ${error.message}`);
+  return (data as PipelineRow | null) ?? null;
+}
+
+/**
  * Atomically flip a pipeline from awaiting_input → running. Returns the row
  * on success, or null if the pipeline was no longer in awaiting_input
  * (e.g. another /respond call already claimed it).

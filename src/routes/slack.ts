@@ -1,5 +1,8 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
+import { getPipelineBySlackThread } from '../db/pipelines.js';
+import { claimAndResume } from '../services/resume.js';
+import { slackClient } from '../slack/client.js';
 import { verifySlackRequest } from '../slack/verify.js';
 
 interface SlackUrlVerification {
@@ -95,19 +98,73 @@ async function handleSlackEvent(
     if (m.bot_id) return;
     if (m.subtype) return;
     if (m.channel_type !== 'im') return;
+    if (!m.text) return;
 
-    log.info(
-      {
-        slack_user: m.user,
-        channel: m.channel,
-        ts: m.ts,
-        thread_ts: m.thread_ts,
-        text: m.text,
-      },
-      'slack DM received (M3 — not yet routed to pipeline)',
+    if (!m.thread_ts) {
+      // Top-level DM (not a thread reply). We don't yet route these into
+      // anything — they could be a fresh request someday, but for now
+      // explain gently and ignore.
+      await postReply(m.channel, m.ts, [
+        "I only resume pipelines from thread replies right now.",
+        'Reply in the thread of a paused pipeline DM to answer its blocker.',
+      ].join(' ')).catch((err) => log.warn({ err }, 'failed to post top-level help'));
+      return;
+    }
+
+    const pipeline = await getPipelineBySlackThread(m.thread_ts).catch((err) => {
+      log.warn({ err, thread_ts: m.thread_ts }, 'getPipelineBySlackThread failed');
+      return null;
+    });
+
+    if (!pipeline) {
+      await postReply(m.channel, m.thread_ts, [
+        "I don't recognize this thread —",
+        "no paused pipeline is anchored to it.",
+      ].join(' ')).catch((err) => log.warn({ err }, 'failed to post unknown-thread reply'));
+      return;
+    }
+
+    const outcome = await claimAndResume(pipeline.id, m.text);
+
+    if (outcome.ok) {
+      log.info(
+        { pipeline_id: pipeline.id, stage: outcome.stage },
+        'slack reply resumed pipeline',
+      );
+      // No ack message — the next state transition (pause / awaiting_review /
+      // failed) will post its own DM in this thread, which serves as the
+      // implicit acknowledgement.
+      return;
+    }
+
+    const reason =
+      outcome.reason === 'not_paused'
+        ? `not paused (status=${outcome.detail ?? 'unknown'})`
+        : outcome.reason === 'not_found'
+          ? 'pipeline not found'
+          : outcome.reason === 'no_session'
+            ? 'pipeline has no resumable session'
+            : `unsupported stage: ${outcome.detail ?? 'null'}`;
+
+    log.warn(
+      { pipeline_id: pipeline.id, outcome },
+      'slack reply could not resume pipeline',
     );
+    await postReply(
+      m.channel,
+      m.thread_ts,
+      `Couldn't resume pipeline \`${pipeline.id.slice(0, 8)}\` — ${reason}.`,
+    ).catch((err) => log.warn({ err }, 'failed to post resume-failure reply'));
     return;
   }
 
   log.warn({ event_type: ev.type }, 'unhandled slack event');
+}
+
+async function postReply(
+  channel: string,
+  thread_ts: string,
+  text: string,
+): Promise<void> {
+  await slackClient().chat.postMessage({ channel, thread_ts, text });
 }
