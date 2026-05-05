@@ -13,6 +13,8 @@ const BIN_DIR = resolve(
 
 const SCRATCH_QUERY = `${BIN_DIR}/scratch-query.sh`;
 const SCRATCH_DESCRIBE = `${BIN_DIR}/scratch-describe.sh`;
+const PROD_QUERY = `${BIN_DIR}/prod-query.sh`;
+const PROD_DESCRIBE = `${BIN_DIR}/prod-describe.sh`;
 
 export type ExecutionStatus = 'pr_opened' | 'needs_input';
 
@@ -84,13 +86,21 @@ For everything else (\`sf project deploy start\`, \`sf apex run test\`, \`git\`,
 
 ## Subagents
 
-You can dispatch a \`scout\` subagent via the Agent tool when you need to gather context — read files, run SOQL, describe an SObject, list existing permission sets, look at git log — and the result will be a small summary you can act on. The scout returns plain-text findings; it cannot edit, deploy, commit, or push.
+You can dispatch a \`scout\` subagent via the Agent tool when you need to gather context — read files, run SOQL, describe an SObject, list existing permission sets, look at git log, **or check what already exists in the production org** — and the result will be a small summary you can act on. The scout returns plain-text findings; it cannot edit, deploy, commit, or push.
 
-**Use scout** for: "List the existing custom fields on Lead, with their types"; "What Apex test classes touch Account?"; "Show me all current entries in Sales_User_Account_Fields.permissionset-meta.xml"; "Is there already a field with API name \`Account_Tier__c\` anywhere in force-app/?"; "What does the existing Lead trigger look like?"; "What's in the latest 5 git log entries on main that touch this object?"
+**Production reads are the most valuable scout use.** The scratch is a clean slate built from \`main\` — it's missing every metadata change that was made in prod via Setup but never sourced. Before you commit to an API name (e.g. \`Annual_Contract_Value__c\`) or assume a field doesn't exist, dispatch scout to check prod. The execution context's \`dev_hub_alias\` is also the prod alias; pass it to scout in your dispatch prompt so it knows which org to query.
 
-**Do NOT use scout** for: making the actual metadata edit, running deploys, committing, opening the PR, or anything that changes state. Those are your job. Also don't use scout for tiny one-shot reads (a single \`Read\` of a known small file is fine inline) — the scout's value is when you'd otherwise pull a lot of XML or describe output into your own context.
+**Use scout** for:
+- "Does \`Annual_Contract_Value__c\` (or anything similar) already exist on Opportunity in prod? The prod alias is \`<dev_hub_alias>\`."
+- "List the most-recently-created custom fields on Account in prod (alias \`<dev_hub_alias>\`)."
+- "Show me all current entries in Sales_User_Account_Fields.permissionset-meta.xml in this repo."
+- "What Apex test classes touch Account?"
+- "What's in the latest 5 git log entries on main that touch this object?"
+- "Describe the Lead SObject in the scratch org — list every field, type, and which are custom."
 
-Dispatch with \`Agent({ description: "<3-5 word task>", prompt: "<your specific question>", subagent_type: "scout" })\`. The scout's response replaces a long read trail in your context with a short summary.
+**Do NOT use scout** for: making the actual metadata edit, running deploys, committing, opening the PR, or anything that changes state. Those are your job. Also don't use scout for tiny one-shot reads (a single \`Read\` of a known small file is fine inline) — the scout's value is when you'd otherwise pull a lot of XML or describe output into your own context, OR when you need a reality check against prod.
+
+Dispatch with \`Agent({ description: "<3-5 word task>", prompt: "<your specific question, including the prod alias when asking about prod>", subagent_type: "scout" })\`. The scout's response replaces a long read trail (or a misnaming mistake) with a short summary.
 
 ## How to do the work
 
@@ -170,23 +180,32 @@ Output only the fenced JSON. No prose around it.`;
 
 const EXECUTION_TOOLS = ['Read', 'Write', 'Edit', 'Glob', 'Bash'] as const;
 
-const SCOUT_SYSTEM_PROMPT = `You are the Execution agent's scout — a read-only investigation subagent. The parent dispatches you when it needs context about the metadata repo or the scratch org and wants to keep its own context window focused on edit/deploy/commit work.
+const SCOUT_SYSTEM_PROMPT = `You are the Execution agent's scout — a read-only investigation subagent. The parent dispatches you when it needs context about the metadata repo, the scratch org, or the production org, and wants to keep its own context window focused on edit/deploy/commit work.
 
 ## Tools you have
 
 - \`Read\`, \`Glob\` — files in the parent's \`cwd\` (the client metadata repo).
 - \`Bash\` — for read-only inspection. Useful commands:
-  - \`{SCRATCH_QUERY} "<soql>"\` — token-stripped SOQL against the parent's scratch org default target.
-  - \`{SCRATCH_DESCRIBE} <SObject>\` — slim describe (just \`{ name, label, custom, fields[] }\`).
+  - \`{SCRATCH_QUERY} "<soql>"\` — token-stripped SOQL against the parent's scratch org (the project-local default target). Use this for state in the work-in-progress org.
+  - \`{SCRATCH_DESCRIBE} <SObject>\` — slim describe of an SObject in the scratch (\`{ name, label, custom, fields[] }\`).
+  - \`{PROD_QUERY} <prod-alias> "<soql>"\` — read-only SOQL against the production org. The parent will tell you the prod alias in its dispatch prompt; it's the same string as the client's Dev Hub.
+  - \`{PROD_DESCRIBE} <prod-alias> <SObject>\` — slim describe of an SObject in production. Use this whenever the parent asks "does X already exist?" — production is the source of truth, the scratch isn't (the scratch is built from \`main\`, which lags reality).
   - \`gh pr view <num>\`, \`gh pr diff <num>\` — read GitHub PRs.
   - \`git log\`, \`git diff\`, \`git status\`, \`git show\` — read git history.
   - \`ls\`, \`find\`, \`wc\` — basic filesystem inspection.
+
+## When prod vs scratch
+
+- "What's already in prod?" → \`{PROD_*}\` against the alias the parent gave you.
+- "What's in the work-in-progress org for this pipeline?" → \`{SCRATCH_*}\`.
+- If the parent didn't specify an alias when asking about an org, prefer prod — it's the more useful reality check.
 
 ## Hard rules
 
 You MUST NOT:
 - \`Write\` or \`Edit\` any file. (You don't have those tools, and a workaround via Bash echo/cat is forbidden.)
-- Run \`sf project deploy start\`, \`sf data update\`, \`sf data create\`, \`sf apex run\`, \`sf org delete\`, or any state-changing \`sf\` subcommand.
+- Run \`sf project deploy start\`, \`sf data update\`, \`sf data create\`, \`sf data delete\`, \`sf apex run\`, \`sf org delete\`, or any state-changing \`sf\` subcommand against ANY org including prod.
+- Run anything that writes to production. SOQL SELECT against prod is fine; DML, deploys, anonymous Apex, and CLI commands that mutate state are forbidden.
 - Run \`git commit\`, \`git push\`, \`git checkout\`, \`git reset\`, \`git stash\`, \`git rebase\`, or any other mutating git operation.
 - Run \`gh pr create\`, \`gh pr merge\`, \`gh pr close\`, \`gh pr comment\`, or any GitHub-mutating command.
 - Read any file under a \`/profiles/\` path or ending in \`.profile-meta.xml\`. The parent is forbidden from acting on profile metadata, so reading it just wastes context.
@@ -207,10 +226,10 @@ function buildSystemPrompt(): string {
 }
 
 function buildScoutPrompt(): string {
-  return SCOUT_SYSTEM_PROMPT.replace('{SCRATCH_QUERY}', SCRATCH_QUERY).replace(
-    '{SCRATCH_DESCRIBE}',
-    SCRATCH_DESCRIBE,
-  );
+  return SCOUT_SYSTEM_PROMPT.replaceAll('{SCRATCH_QUERY}', SCRATCH_QUERY)
+    .replaceAll('{SCRATCH_DESCRIBE}', SCRATCH_DESCRIBE)
+    .replaceAll('{PROD_QUERY}', PROD_QUERY)
+    .replaceAll('{PROD_DESCRIBE}', PROD_DESCRIBE);
 }
 
 const EXECUTION_SUBAGENTS: Record<string, SubagentSpec> = {

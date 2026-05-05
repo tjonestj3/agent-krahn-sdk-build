@@ -82,9 +82,16 @@ After a successful PR, the orchestrator's diff guard re-checks for forbidden pat
 
 ### Scout subagent
 
-Execution can dispatch a `scout` subagent via the `Agent` tool. The scout has only `Read`, `Glob`, and `Bash` (no `Write` or `Edit`), runs on Haiku 4.5 with a 12-turn budget, and is forbidden from any state-changing operation (no deploys, no commits, no PRs, no profile reads).
+Execution can dispatch a `scout` subagent via the `Agent` tool. The scout has only `Read`, `Glob`, and `Bash` (no `Write` or `Edit`), runs on Haiku 4.5 with a 12-turn budget, and is forbidden from any state-changing operation (no deploys, no commits, no PRs, no profile reads, no DML against any org including prod).
 
-Use cases: enumerating existing fields on an SObject, listing entries in a permission set XML, finding existing Apex test classes that touch a given object, scanning recent `git log` for related changes, running a SOQL or describe whose raw output would otherwise be 50KB+ in the parent's context.
+The scout has four `bin/` wrappers it uses for org reads:
+
+- `bin/scratch-query.sh "<soql>"` and `bin/scratch-describe.sh <SObject>` — read-only access to the scratch org (the work-in-progress substrate).
+- `bin/prod-query.sh <alias> "<soql>"` and `bin/prod-describe.sh <alias> <SObject>` — read-only access to the **production org**, which in this pipeline is always the client's Dev Hub alias. The parent passes the prod alias in its dispatch prompt.
+
+Why prod-read matters: the scratch is freshly built from `main`, which lags reality. A field added in prod via Setup but never sourced won't be in the scratch. Before the parent commits to an API name or assumes a field doesn't exist, it should dispatch the scout to check prod. This dramatically reduces "deploy succeeds in scratch, fails after merge to prod" surprises.
+
+Use cases: "Does `Annual_Contract_Value__c` already exist on Opportunity in prod?", listing entries in a permission set XML, finding existing Apex test classes that touch a given object, scanning recent `git log` for related changes, running a SOQL or describe whose raw output would otherwise be 50KB+ in the parent's context.
 
 The scout returns a concise plain-text summary (≤ 30 lines), preserving the parent's context window for the actual edit/deploy/commit work. Subagent token + cost usage rolls up into the parent's stage telemetry.
 
