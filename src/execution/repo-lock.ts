@@ -19,8 +19,16 @@ export async function withClientRepoLock<T>(
   const head = holders.get(clientId) ?? Promise.resolve();
   const tail: Promise<T> = head.catch(() => undefined).then(() => fn());
   holders.set(clientId, tail);
-  tail.finally(() => {
-    if (holders.get(clientId) === tail) holders.delete(clientId);
-  });
+
+  // Cleanup runs whether tail succeeds or rejects. CRITICAL: swallow the
+  // result of the chain so the cleanup branch never produces an unhandled
+  // rejection. The caller's `await tail` is what surfaces the real error
+  // (or the success value); we don't need this branch to do anything else.
+  tail
+    .finally(() => {
+      if (holders.get(clientId) === tail) holders.delete(clientId);
+    })
+    .catch(() => undefined);
+
   return tail;
 }
