@@ -137,7 +137,11 @@ const DOCUMENTATION_TOOLS = ['Read', 'Glob', 'Write', 'Bash'] as const;
 export const DOCUMENTATION_CONFIG: AgentConfig = {
   name: 'documentation',
   systemPrompt: DOCUMENTATION_SYSTEM_PROMPT,
-  model: 'claude-sonnet-4-6',
+  // Haiku 4.5: doc work is "summarize this PR diff into a fixed markdown
+  // template" — well within Haiku's wheelhouse, and ~5x cheaper than
+  // Sonnet. Watch the build records for quality drift; revert to Sonnet if
+  // the "Decisions worth remembering" section starts going generic.
+  model: 'claude-haiku-4-5-20251001',
   tools: DOCUMENTATION_TOOLS,
   maxTurns: 15,
 };
