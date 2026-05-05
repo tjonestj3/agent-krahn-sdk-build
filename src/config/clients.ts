@@ -58,18 +58,28 @@ function parsePermissionSets(md: string): RolePermissionSet[] {
   // We accept either em-dash, en-dash, or a plain hyphen as the separator
   // between the permset name and its description, and the name may or may
   // not be backtick-wrapped.
-  const sectionMatch = md.match(
-    /^##\s*Permission\s*sets\s*$([\s\S]*?)(?=^##\s|\Z)/im,
-  );
-  if (!sectionMatch || !sectionMatch[1]) return [];
-  const section = sectionMatch[1];
-
-  const bulletRe =
-    /^\s*-\s+`?([A-Za-z0-9_]+)`?\s*[—–-]\s*(.+?)\s*$/gm;
+  //
+  // Implementation note: scan line-by-line rather than regex-match the
+  // whole section. JavaScript regex doesn't have a `\Z` end-of-string
+  // anchor and a multiline-flag `$` lookahead won't reliably terminate at
+  // EOF when the Permission sets section is the last in the file.
+  const lines = md.split('\n');
+  let inSection = false;
   const out: RolePermissionSet[] = [];
-  let m: RegExpExecArray | null;
-  while ((m = bulletRe.exec(section)) !== null) {
-    if (m[1] && m[2]) out.push({ name: m[1], description: m[2] });
+  const headingRe = /^##\s+(.*)$/;
+  const bulletRe = /^\s*-\s+`?([A-Za-z0-9_]+)`?\s*[—–-]\s*(.+?)\s*$/;
+
+  for (const line of lines) {
+    const heading = line.match(headingRe);
+    if (heading) {
+      inSection = /^Permission\s*sets\s*$/i.test(heading[1]!.trim());
+      continue;
+    }
+    if (!inSection) continue;
+    const bullet = line.match(bulletRe);
+    if (bullet && bullet[1] && bullet[2]) {
+      out.push({ name: bullet[1], description: bullet[2] });
+    }
   }
   return out;
 }
