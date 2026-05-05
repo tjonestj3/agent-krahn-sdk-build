@@ -15,7 +15,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "test:prompts": "tsx test/prompts/run.ts"
+    "test:prompts": "tsx test/prompts/run.ts",
+    "wiki": "tsx scripts/build-wiki.ts"
   },
   "keywords": [],
   "author": "",

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wiki-demo — Build Wiki</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; color: #1f2328; background: #f6f8fa; }
+  .app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  aside { background: #fff; border-right: 1px solid #d0d7de; overflow-y: auto; display: flex; flex-direction: column; }
+  aside header { padding: 20px 16px 12px; border-bottom: 1px solid #d0d7de; }
+  aside h1 { margin: 0 0 4px 0; font-size: 18px; }
+  .stats { font-size: 12px; color: #57606a; }
+  .search { padding: 12px 16px; border-bottom: 1px solid #d0d7de; }
+  .search input { width: 100%; padding: 6px 10px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 13px; }
+  .records { list-style: none; margin: 0; padding: 0; flex: 1; overflow-y: auto; }
+  .record { padding: 10px 16px; border-bottom: 1px solid #eaeef2; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+  .record:hover { background: #f6f8fa; }
+  .record.active { background: #ddf4ff; border-left: 3px solid #0969da; padding-left: 13px; }
+  .rec-date { font-size: 11px; color: #57606a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .rec-title { font-size: 13px; font-weight: 500; }
+  .rec-points { font-size: 11px; color: #57606a; }
+  main { overflow-y: auto; padding: 32px 48px 64px; max-width: 920px; }
+  main h1 { margin-top: 0; font-size: 28px; border-bottom: 1px solid #d0d7de; padding-bottom: 8px; }
+  main h2 { font-size: 20px; margin-top: 28px; padding-bottom: 4px; border-bottom: 1px solid #eaeef2; }
+  main h3 { font-size: 16px; margin-top: 20px; color: #57606a; }
+  main p { line-height: 1.6; }
+  main blockquote { margin: 0; padding: 8px 16px; border-left: 4px solid #d0d7de; color: #57606a; background: #fff; }
+  main code { background: #eff1f3; padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.9em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  main pre.code { background: #0d1117; color: #e6edf3; padding: 14px 16px; border-radius: 8px; overflow-x: auto; }
+  main pre.code code { background: transparent; padding: 0; color: inherit; }
+  main table { border-collapse: collapse; width: 100%; margin-top: 8px; background: #fff; }
+  main th, main td { border: 1px solid #d0d7de; padding: 6px 12px; text-align: left; font-size: 13px; }
+  main th { background: #f6f8fa; }
+  main hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
+  main a { color: #0969da; }
+  .empty { padding: 32px; color: #57606a; text-align: center; }
+  .meta { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 13px; color: #57606a; display: flex; gap: 24px; flex-wrap: wrap; }
+  .meta strong { color: #1f2328; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <header>
+      <h1>wiki-demo — Build Wiki</h1>
+      <div class="stats">1 build · 2 pts shipped</div>
+    </header>
+    <div class="search">
+      <input id="q" type="search" placeholder="Filter…" autocomplete="off">
+    </div>
+    <ul class="records" id="records">
+        <li class="record" data-idx="0">
+          <span class="rec-date">2026-05-04</span>
+          <span class="rec-title">Add custom Picklist field Account_Tier__c on Lead</span>
+          <span class="rec-points">2 pts</span>
+        </li></ul>
+  </aside>
+  <main id="main"><div class="empty">Select a build on the left.</div></main>
+</div>
+<script>
+  const RECORDS = [{"filename":"2026-05-04-add-account-tier-picklist-on-lead.md","frontmatter":{"type":"build_record","date":"2026-05-04","client":"wiki-demo","pipeline_id":"4f3c1b80-7a59-4d42-b3e1-2a8e0f0c1234","pr_number":42,"pr_url":"https://github.com/example/wiki-demo/pull/42","classification":"Add custom Picklist field Account_Tier__c on Lead","story_points":2},"bodyHtml":"\u003ch1>Add custom Picklist field Account_Tier__c on Lead\u003c/h1>\n\u003ch2>Summary\u003c/h2>\n\u003cp>Sales reps needed a way to flag leads by tier so the routing flow can prioritize Bronze accounts during pipeline cleanup. We added a global Picklist on Lead with Bronze / Silver / Gold and granted Sales the ability to read and edit it via the existing role permission set.\u003c/p>\n\u003ch2>Original request\u003c/h2>\n\u003cblockquote>hey can you add a picklist on Lead for account tier, values bronze / silver / gold, default bronze. tonya needs to be able to edit it.\u003c/blockquote>\n\u003ch2>What changed\u003c/h2>\n\u003ch3>Schema\u003c/h3>\n\u003cul>\u003cli>\u003cstrong>Lead.Account_Tier__c\u003c/strong> — new Picklist (API name \u003ccode>Account_Tier__c\u003c/code>), values: \u003ccode>Bronze\u003c/code>, \u003ccode>Silver\u003c/code>, \u003ccode>Gold\u003c/code>. Default: \u003ccode>Bronze\u003c/code>. Required: false.\u003c/li>\u003c/ul>\n\u003ch3>Access\u003c/h3>\n\u003cul>\u003cli>\u003cstrong>Sales_User_Account_Fields\u003c/strong> (extended) — read+edit on \u003ccode>Lead.Account_Tier__c\u003c/code>. We extended the existing role permset rather than creating \u003ccode>Lead_Tier_Field_Access\u003c/code>, per the registry policy.\u003c/li>\u003c/ul>\n\u003ch2>How to verify\u003c/h2>\n\u003col>\u003cli>Log into the scratch org (\u003ccode>sf org open --target-org wiki-demo-scratch-1\u003c/code>).\u003c/li>\u003cli>Navigate to any Lead record.\u003c/li>\u003cli>Confirm the \u003cstrong>Account Tier\u003c/strong> picklist renders in the detail panel.\u003c/li>\u003cli>As a Sales-profile user, edit the field and save — value persists.\u003c/li>\u003cli>As a non-Sales user, confirm the field is read-only or hidden (depending on profile FLS defaults).\u003c/li>\u003c/ol>\n\u003ch2>Rollback\u003c/h2>\n\u003cp>\u003ccode>git revert &lt;commit-sha&gt;\u003c/code> on \u003ccode>main\u003c/code> and run \u003ccode>sf project deploy start -d force-app/main/default/objects/Lead/fields/Account_Tier__c.field-meta.xml -d force-app/main/default/permissionsets/Sales_User_Account_Fields.permissionset-meta.xml\u003c/code>. The picklist drops; the permset entry disappears with it. No data migration needed.\u003c/p>\n\u003ch2>Build trail\u003c/h2>\n\u003ctable>\u003cthead>\u003ctr>\u003cth>Stage\u003c/th>\u003cth>Result\u003c/th>\u003c/tr>\u003c/thead>\u003ctbody>\u003ctr>\u003ctd>Triage\u003c/td>\u003ctd>Add custom Picklist field on Lead with values Bronze/Silver/Gold · change_type: \u003ccode>add_field\u003c/code> · urgency: \u003ccode>this_week\u003c/code>\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Router\u003c/td>\u003ctd>client: \u003ccode>wiki-demo\u003c/code> · dev hub: \u003ccode>wiki-demo-devhub\u003c/code> (\u003ccode>high\u003c/code> confidence)\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Work Identifier\u003c/td>\u003ctd>2 pts · permission_strategy: \u003ccode>extend_existing\u003c/code>\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Execution\u003c/td>\u003ctd>branch \u003ccode>krahnborn-os/4f3c1b80-add-account-tier\u003c/code> → https://github.com/example/wiki-demo/pull/42\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Merged\u003c/td>\u003ctd>2026-05-04T15:47:22Z\u003c/td>\u003c/tr>\u003c/tbody>\u003c/table>\n\u003ch2>Decisions worth remembering\u003c/h2>\n\u003cul>\u003cli>Used \u003ccode>Sales_User_Account_Fields\u003c/code> rather than spinning up a feature-specific permset. Future sales-facing field work on Lead should land here too.\u003c/li>\u003cli>Default value is \u003ccode>Bronze\u003c/code> per the request; if there's a tier downgrade audit later we'll want History Tracking on this field — not enabled now.\u003c/li>\u003cli>The pipeline did not add Apex tests because no Lead-trigger logic was touched. Note for future: any flow added on top of this field will need its own test scaffolding.\u003c/li>\u003c/ul>"}];
+  const main = document.getElementById('main');
+  const list = document.getElementById('records');
+  const q = document.getElementById('q');
+
+  function renderMeta(fm) {
+    const items = [];
+    if (fm.date) items.push('<span><strong>Date:</strong> ' + escape(fm.date) + '</span>');
+    if (fm.story_points != null) items.push('<span><strong>Story points:</strong> ' + escape(fm.story_points) + '</span>');
+    if (fm.pr_url) items.push('<span><strong>PR:</strong> <a href="' + fm.pr_url + '" target="_blank">#' + escape(fm.pr_number ?? '') + '</a></span>');
+    if (fm.pipeline_id) items.push('<span><strong>Pipeline:</strong> <code>' + escape(String(fm.pipeline_id).slice(0, 8)) + '</code></span>');
+    return '<div class="meta">' + items.join('') + '</div>';
+  }
+
+  function escape(s) {
+    return String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  function show(idx) {
+    const r = RECORDS[idx];
+    if (!r) return;
+    main.innerHTML = renderMeta(r.frontmatter) + r.bodyHtml;
+    document.querySelectorAll('.record').forEach((el) => {
+      el.classList.toggle('active', Number(el.dataset.idx) === idx);
+    });
+    history.replaceState(null, '', '#' + encodeURIComponent(r.filename));
+  }
+
+  list.addEventListener('click', (e) => {
+    const li = e.target.closest('.record');
+    if (li) show(Number(li.dataset.idx));
+  });
+
+  q.addEventListener('input', () => {
+    const term = q.value.toLowerCase().trim();
+    document.querySelectorAll('.record').forEach((el) => {
+      const idx = Number(el.dataset.idx);
+      const hay = (RECORDS[idx].frontmatter.classification + ' ' + RECORDS[idx].frontmatter.date).toLowerCase();
+      el.style.display = !term || hay.includes(term) ? '' : 'none';
+    });
+  });
+
+  // Open via hash (#filename) or first record
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const initialIdx = hash ? RECORDS.findIndex((r) => r.filename === hash) : 0;
+  if (RECORDS.length > 0) show(initialIdx >= 0 ? initialIdx : 0);
+</script>
+</body>
+</html>
