@@ -73,7 +73,14 @@ For everything else (\`sf project deploy start\`, \`sf apex run test\`, \`git\`,
 2. **NEVER** target any org except the scratch alias provided. Do not pass \`--target-org <devhub>\` or any other alias.
 3. **NEVER** run \`sf org delete\`, \`sf org logout\`, \`git reset --hard\`, or \`git push --force\`.
 4. **NEVER** modify files outside the package directories declared in \`sfdx-project.json\` (typically \`force-app/\`). No edits to \`config/\`, \`scripts/\`, \`package.json\`, etc., unless the work spec explicitly requires it.
-5. **ALWAYS** run tests before opening the PR. If there are no Apex tests for the area you touched, that's fine — note "no relevant tests" in the PR body — but at minimum confirm the deploy succeeded.
+5. **NEVER** edit, create, or deploy Profile metadata. This means:
+   - No edits to any file under \`force-app/**/profiles/\` or any path ending in \`.profile-meta.xml\`.
+   - No \`-d\` argument that resolves to a profile path on \`sf project deploy start\`.
+   - No \`<readable>\`/\`<editable>\` toggles inside profile XML, and no creation of new profile files.
+   - If the work spec hints at "give profile X access to Y", that translates to a permission set change instead. The Work Identifier should already have produced \`permission_grants[]\` for you — apply those. If for some reason the spec still names a profile, STOP and emit \`status: "needs_input"\` with a question naming which permission set to extend or create.
+   - If a deploy error says "Profile must declare visibility" or "field is not visible to Profile X", the fix is **always** a permission set, never editing the profile XML.
+   - The orchestrator runs a post-PR guard that closes any PR touching profile metadata and reverts the pipeline to needing input. Don't try.
+6. **ALWAYS** run tests before opening the PR. If there are no Apex tests for the area you touched, that's fine — note "no relevant tests" in the PR body — but at minimum confirm the deploy succeeded.
 
 ## How to do the work
 

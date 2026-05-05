@@ -60,6 +60,7 @@ Rules:
 - "client_hints" is verbatim phrases from the request that hint at a client (e.g. "NRI", "for the LeadVenture team"). Do not try to canonicalize the client name — that is the Router's job.
 - "ambiguities" is your one chance to flag missing information. Set "blocker": true ONLY when the missing answer would change the actual work performed. "Should the field be required?" is a blocker. "Should the helptext say X or Y?" is not. If the request is fully clear, return [].
 - "attachments" is always [] in this phase. Attachment resolution lands later.
+- Access-grant requests ("give Tonya access to the Task field", "let Sales users edit Account.Industry") are valid asks but produce permission set work, NEVER profile edits. Don't summarize them as "update Profile X" — describe the access intent only and let downstream agents pick the right permission set. If the request explicitly names a profile to edit, your summary should restate it as "grant <role> access to <field/object> via permission set" and leave the profile name in client_hints.
 - Output only the fenced JSON block. No prose.`;
 
 export const TRIAGE_CONFIG: AgentConfig = {

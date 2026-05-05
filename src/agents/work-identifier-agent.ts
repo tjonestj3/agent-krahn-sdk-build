@@ -55,6 +55,7 @@ Given the inputs, your FINAL message must be a single fenced JSON block in this 
 Rules:
 - "work_classification" must be concrete and imperative. "Add custom Picklist field Account_Tier__c on Lead" — not "field work on lead".
 - "metadata_changes" enumerates every distinct metadata mutation. If the work is doc-only or config-only, return [] and explain in execution_notes.
+- **Profile metadata is forbidden.** \`object\` MUST NEVER be \`"Profile"\` and \`metadata_changes\` MUST NEVER reference a profile or a profile XML path. Any access-grant intent (read/edit access for a role or user, FLS, object permissions, app/tab visibility) belongs in \`permission_grants[]\` (see the Permission set policy section below), not here. The Execution agent is also blocked from touching profile XML, so emitting profile work guarantees a failed pipeline.
 - "story_points" uses the standard Fibonacci scale (1, 2, 3, 5, 8, 13). Anchors:
   - 1: trivial single-field add/edit, no flow/code, no tests.
   - 2: small field work touching 1 object, simple validation, no Apex.

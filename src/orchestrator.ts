@@ -14,6 +14,12 @@ import {
   type ExecutionContext,
   setupExecutionEnvironment,
 } from './execution/setup.js';
+import {
+  inspectExecutionDiff,
+  closePrWithReason,
+  resetFeatureBranch,
+  type DiffViolation,
+} from './execution/guard.js';
 import { loadClientConfig } from './config/clients.js';
 import {
   type PipelineRow,
@@ -353,6 +359,14 @@ async function finalizeAfterExecution(
   }
 
   // status === 'pr_opened'
+  // Hard-rule guard: refuse to leave the pipeline in awaiting_review if the
+  // diff includes anything the orchestrator forbids (profile metadata,
+  // for now). Close the PR, pause the pipeline, and ask the human whether
+  // to retry — the execution agent will be resumed with the violation as
+  // its prompt.
+  const guard = await runDiffGuard(pipeline, exec);
+  if (guard) return guard;
+
   const done = await updatePipeline(pipeline.id, {
     status: 'awaiting_review',
     current_stage: null,
@@ -369,6 +383,113 @@ async function finalizeAfterExecution(
     work_identifier: wi,
     execution: exec,
   };
+}
+
+async function runDiffGuard(
+  pipeline: PipelineRow,
+  exec: ExecutionPayload,
+): Promise<OrchestratorOutcome | null> {
+  if (!pipeline.client_id || !pipeline.branch_name) return null;
+
+  const client = await loadClientConfig(pipeline.client_id);
+  if (!client.repo_local) return null;
+
+  const guard = await inspectExecutionDiff(
+    client.repo_local,
+    pipeline.branch_name,
+  ).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[diff-guard] inspect failed:', err);
+    return null;
+  });
+  if (!guard || guard.ok) return null;
+
+  const reason = formatViolationMessage(guard.violations);
+
+  if (exec.pr_url) {
+    await closePrWithReason(client.repo_local, exec.pr_url, reason);
+  }
+  if (pipeline.branch_name) {
+    await resetFeatureBranch(client.repo_local, pipeline.branch_name);
+  }
+
+  const blockers = [
+    {
+      question:
+        'The PR was closed because it violated a hard rule (see "blocked_on"). Reply with how to redo this without the forbidden change — e.g. "use the Sales_User_Account_Fields permission set" — and the agent will retry.',
+      blocker: true,
+    },
+  ];
+
+  const paused = await updatePipeline(pipeline.id, {
+    status: 'awaiting_input',
+    current_stage: 'execution',
+    pr_url: null,
+    execution_payload: {
+      ...exec,
+      status: 'needs_input',
+      pr_url: null,
+      blocked_on: reason,
+      ambiguities: blockers,
+    },
+  });
+
+  await logEvent({
+    pipeline_id: pipeline.id,
+    event_type: 'diff_guard_violation',
+    stage: 'execution',
+    payload: { violations: guard.violations, changed_files: guard.changedFiles },
+  });
+
+  await logEvent({
+    pipeline_id: pipeline.id,
+    event_type: 'awaiting_input',
+    stage: 'execution',
+    payload: { blocked_on: reason, blockers },
+  });
+
+  await notifyAwaitingInput(paused, 'execution', blockers, { blocked_on: reason });
+
+  if (!paused.triage_payload || !paused.work_identifier_payload) {
+    throw new Error(`pipeline ${pipeline.id} missing payloads after diff guard`);
+  }
+
+  const routed: RouterPayload = {
+    client: paused.client_id,
+    confidence: 'high',
+    reasoning: 'restored from pipeline row after diff-guard pause',
+    recommended_dev_hub: paused.dev_hub_alias,
+    options: [],
+  };
+
+  return {
+    status: 'awaiting_input',
+    stage: 'execution',
+    pipeline: paused,
+    triage: paused.triage_payload,
+    routed,
+    work_identifier: paused.work_identifier_payload,
+    execution: { ...exec, status: 'needs_input', pr_url: null, blocked_on: reason },
+    blockers,
+  };
+}
+
+function formatViolationMessage(violations: DiffViolation[]): string {
+  const profilePaths = violations
+    .filter((v) => v.rule === 'profile_metadata')
+    .map((v) => v.path);
+  if (profilePaths.length === 0) {
+    return 'PR rejected by orchestrator diff guard.';
+  }
+  return [
+    'PR rejected: this pipeline forbids edits to Profile metadata.',
+    'Files that violated the rule:',
+    ...profilePaths.map((p) => `- ${p}`),
+    '',
+    'Use a permission set for any access changes instead. Reply with the',
+    'permission set to extend (or "create new" + the role it serves) and',
+    'the agent will redo the work without touching profiles.',
+  ].join('\n');
 }
 
 /**
