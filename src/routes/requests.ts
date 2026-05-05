@@ -1,10 +1,12 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { runTriage } from '../agents/runner.js';
+import { TRIAGE_CONFIG } from '../agents/triage-agent.js';
 import {
   createPipeline,
   getPipeline,
   updatePipeline,
   logEvent,
+  logStageTelemetry,
   recentEvents,
   type PipelineRow,
 } from '../db/pipelines.js';
@@ -82,6 +84,13 @@ async function runFromTriage(pipeline: PipelineRow): Promise<void> {
       event_type: 'stage_completed',
       stage: 'triage',
       payload: triage.data,
+    });
+    await logStageTelemetry({
+      pipeline_id: pipeline.id,
+      stage: 'triage',
+      agent: TRIAGE_CONFIG.name,
+      model: TRIAGE_CONFIG.model,
+      result: triage,
     });
 
     await processPipelineFromTriage(triagedRow, triage);

@@ -3,11 +3,15 @@ import {
   resumeWorkIdentifier,
   resumeExecution,
 } from '../agents/runner.js';
+import { TRIAGE_CONFIG } from '../agents/triage-agent.js';
+import { WORK_IDENTIFIER_CONFIG } from '../agents/work-identifier-agent.js';
+import { EXECUTION_CONFIG } from '../agents/execution-agent.js';
 import {
   getPipeline,
   claimForRunning,
   updatePipeline,
   logEvent,
+  logStageTelemetry,
   type PipelineRow,
 } from '../db/pipelines.js';
 import {
@@ -105,6 +109,13 @@ async function runResume(
         stage: 'triage',
         payload: triage.data,
       });
+      await logStageTelemetry({
+        pipeline_id: claimed.id,
+        stage: 'triage',
+        agent: TRIAGE_CONFIG.name,
+        model: TRIAGE_CONFIG.model,
+        result: triage,
+      });
       await processPipelineFromTriage(triagedRow, triage);
       return;
     }
@@ -120,6 +131,13 @@ async function runResume(
         event_type: 'stage_completed',
         stage: 'work_identifier',
         payload: wi.data,
+      });
+      await logStageTelemetry({
+        pipeline_id: claimed.id,
+        stage: 'work_identifier',
+        agent: WORK_IDENTIFIER_CONFIG.name,
+        model: WORK_IDENTIFIER_CONFIG.model,
+        result: wi,
       });
       await processPipelineFromWorkIdentifier(wiRow, wi);
       return;
@@ -142,6 +160,13 @@ async function runResume(
         event_type: 'stage_completed',
         stage: 'execution',
         payload: exec.data,
+      });
+      await logStageTelemetry({
+        pipeline_id: claimed.id,
+        stage: 'execution',
+        agent: EXECUTION_CONFIG.name,
+        model: EXECUTION_CONFIG.model,
+        result: exec,
       });
       await processPipelineFromExecution(execRow, exec);
     });

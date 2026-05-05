@@ -3,6 +3,7 @@ import type { TriagePayload } from '../agents/triage-agent.js';
 import type { WorkIdentifierPayload } from '../agents/work-identifier-agent.js';
 import type { ExecutionPayload } from '../agents/execution-agent.js';
 import type { DocumentationPayload } from '../agents/documentation-agent.js';
+import type { AgentResult } from '../agents/types.js';
 
 export type PipelineStatus =
   | 'running'
@@ -187,6 +188,34 @@ export async function logEvent(input: {
   });
 
   if (error) throw new Error(`logEvent: ${error.message}`);
+}
+
+/**
+ * Log a `stage_telemetry` event capturing token + cost + turn metrics from
+ * an agent run. Best-effort: a logging failure must not crash the
+ * pipeline. Telemetry rows accumulate alongside stage_completed events
+ * so cli/pipelines.ts can sum them when inspecting a run.
+ */
+export async function logStageTelemetry<T>(args: {
+  pipeline_id: string;
+  stage: string;
+  agent: string;
+  model: string;
+  result: AgentResult<T>;
+}): Promise<void> {
+  await logEvent({
+    pipeline_id: args.pipeline_id,
+    event_type: 'stage_telemetry',
+    stage: args.stage,
+    payload: {
+      agent: args.agent,
+      model: args.model,
+      ...args.result.telemetry,
+    },
+  }).catch((err) => {
+    // eslint-disable-next-line no-console
+    console.warn(`[telemetry] logStageTelemetry failed for ${args.pipeline_id}`, err);
+  });
 }
 
 export interface PipelineEventRow {

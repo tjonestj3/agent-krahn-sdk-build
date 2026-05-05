@@ -27,9 +27,62 @@ if (first && UUID_RE.test(first)) {
     .select('event_type, stage, payload, created_at')
     .eq('pipeline_id', first)
     .order('created_at', { ascending: true })
-    .limit(50);
+    .limit(100);
 
-  console.log(JSON.stringify({ pipeline: row, events: events ?? [] }, null, 2));
+  const telemetry = summarizeTelemetry(events ?? []);
+
+  console.log(
+    JSON.stringify(
+      {
+        pipeline: row,
+        events: events ?? [],
+        telemetry_summary: telemetry,
+      },
+      null,
+      2,
+    ),
+  );
+
+  function summarizeTelemetry(rows: { event_type: string; payload: unknown }[]) {
+    const stages: Record<string, {
+      agent: string;
+      model: string;
+      num_turns: number | null;
+      total_cost_usd: number | null;
+      input_tokens: number | null;
+      output_tokens: number | null;
+      cache_read_input_tokens: number | null;
+      cache_creation_input_tokens: number | null;
+    }> = {};
+    let totalCost = 0;
+    let totalTurns = 0;
+    for (const r of rows) {
+      if (r.event_type !== 'stage_telemetry') continue;
+      const p = (r.payload ?? {}) as Record<string, unknown>;
+      const stage = String(p.agent ?? 'unknown');
+      stages[stage] = {
+        agent: String(p.agent ?? ''),
+        model: String(p.model ?? ''),
+        num_turns: numOrNull(p.num_turns),
+        total_cost_usd: numOrNull(p.total_cost_usd),
+        input_tokens: numOrNull(p.input_tokens),
+        output_tokens: numOrNull(p.output_tokens),
+        cache_read_input_tokens: numOrNull(p.cache_read_input_tokens),
+        cache_creation_input_tokens: numOrNull(p.cache_creation_input_tokens),
+      };
+      if (typeof p.total_cost_usd === 'number') totalCost += p.total_cost_usd;
+      if (typeof p.num_turns === 'number') totalTurns += p.num_turns;
+    }
+    return {
+      per_stage: stages,
+      total_cost_usd: totalCost || null,
+      total_turns: totalTurns || null,
+    };
+  }
+
+  function numOrNull(v: unknown): number | null {
+    return typeof v === 'number' && Number.isFinite(v) ? v : null;
+  }
 } else {
   // List view: filter by status if given
   const status = first;

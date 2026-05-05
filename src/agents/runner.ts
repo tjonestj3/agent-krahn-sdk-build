@@ -1,5 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
-import type { AgentConfig, AgentResult } from './types.js';
+import type { AgentConfig, AgentResult, AgentTelemetry } from './types.js';
 import {
   ROUTER_CONFIG,
   type RouterPayload,
@@ -65,14 +65,33 @@ export async function runAgent<T>(
 
   const transcript: string[] = [];
   let sessionId: string | null = null;
+  let telemetry: AgentTelemetry = {
+    num_turns: null,
+    duration_ms: null,
+    total_cost_usd: null,
+    input_tokens: null,
+    output_tokens: null,
+    cache_read_input_tokens: null,
+    cache_creation_input_tokens: null,
+  };
 
   for await (const msg of response) {
-    if (msg.session_id) sessionId = msg.session_id;
+    const m = msg as Record<string, unknown>;
+    if (typeof m.session_id === 'string') sessionId = m.session_id;
 
-    if (msg.type === 'assistant') {
-      for (const block of msg.message.content) {
-        if (block.type === 'text') transcript.push(block.text);
+    if (m.type === 'assistant') {
+      const inner = (m as { message?: { content?: unknown[] } }).message;
+      const content = Array.isArray(inner?.content) ? inner.content : [];
+      for (const block of content) {
+        const b = block as { type?: string; text?: string };
+        if (b.type === 'text' && typeof b.text === 'string') {
+          transcript.push(b.text);
+        }
       }
+    }
+
+    if (m.type === 'result') {
+      telemetry = extractTelemetry(m);
     }
   }
 
@@ -85,7 +104,24 @@ export async function runAgent<T>(
     );
   }
 
-  return { data, sessionId, rawText };
+  return { data, sessionId, rawText, telemetry };
+}
+
+function extractTelemetry(msg: Record<string, unknown>): AgentTelemetry {
+  const usage = (msg.usage ?? {}) as Record<string, unknown>;
+  return {
+    num_turns: numOrNull(msg.num_turns),
+    duration_ms: numOrNull(msg.duration_ms),
+    total_cost_usd: numOrNull(msg.total_cost_usd),
+    input_tokens: numOrNull(usage.input_tokens),
+    output_tokens: numOrNull(usage.output_tokens),
+    cache_read_input_tokens: numOrNull(usage.cache_read_input_tokens),
+    cache_creation_input_tokens: numOrNull(usage.cache_creation_input_tokens),
+  };
+}
+
+function numOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
 function extractFinalJson<T>(text: string): T | null {

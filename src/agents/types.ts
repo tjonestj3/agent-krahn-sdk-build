@@ -7,8 +7,19 @@ export interface AgentConfig {
   cwd?: string;
 }
 
+export interface AgentTelemetry {
+  num_turns: number | null;
+  duration_ms: number | null;
+  total_cost_usd: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  cache_read_input_tokens: number | null;
+  cache_creation_input_tokens: number | null;
+}
+
 export interface AgentResult<T> {
   data: T;
   sessionId: string | null;
   rawText: string;
+  telemetry: AgentTelemetry;
 }

@@ -36,7 +36,12 @@ import {
   type PipelineRow,
   updatePipeline,
   logEvent,
+  logStageTelemetry,
 } from './db/pipelines.js';
+import { ROUTER_CONFIG } from './agents/router-agent.js';
+import { WORK_IDENTIFIER_CONFIG } from './agents/work-identifier-agent.js';
+import { EXECUTION_CONFIG } from './agents/execution-agent.js';
+import { DOCUMENTATION_CONFIG } from './agents/documentation-agent.js';
 import {
   notifyAwaitingInput,
   notifyAwaitingReview,
@@ -140,6 +145,13 @@ async function runRouterStage(
     stage: 'router',
     payload: routed.data,
   });
+  await logStageTelemetry({
+    pipeline_id: pipeline.id,
+    stage: 'router',
+    agent: ROUTER_CONFIG.name,
+    model: ROUTER_CONFIG.model,
+    result: routed,
+  });
 
   return runWorkIdentifierStage(updated, triage, routed.data);
 }
@@ -168,6 +180,13 @@ async function runWorkIdentifierStage(
     event_type: 'stage_completed',
     stage: 'work_identifier',
     payload: wi.data,
+  });
+  await logStageTelemetry({
+    pipeline_id: pipeline.id,
+    stage: 'work_identifier',
+    agent: WORK_IDENTIFIER_CONFIG.name,
+    model: WORK_IDENTIFIER_CONFIG.model,
+    result: wi,
   });
 
   return continueAfterWorkIdentifier(afterWi, triage, routed, wi.data);
@@ -299,6 +318,13 @@ async function runExecutionStage(
       event_type: 'stage_completed',
       stage: 'execution',
       payload: exec.data,
+    });
+    await logStageTelemetry({
+      pipeline_id: pipeline.id,
+      stage: 'execution',
+      agent: EXECUTION_CONFIG.name,
+      model: EXECUTION_CONFIG.model,
+      result: exec,
     });
 
     return finalizeAfterExecution(afterExec, triage, routed, wi, exec.data);
@@ -604,6 +630,13 @@ export async function processPipelineFromMerge(
       event_type: 'stage_completed',
       stage: 'documentation',
       payload: doc.data,
+    });
+    await logStageTelemetry({
+      pipeline_id: pipeline.id,
+      stage: 'documentation',
+      agent: DOCUMENTATION_CONFIG.name,
+      model: DOCUMENTATION_CONFIG.model,
+      result: doc,
     });
 
     await notifyCompleted(completed);
