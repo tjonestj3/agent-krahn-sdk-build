@@ -14,7 +14,8 @@
     "respond": "tsx src/cli/respond.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:prompts": "tsx test/prompts/run.ts"
   },
   "keywords": [],
   "author": "",

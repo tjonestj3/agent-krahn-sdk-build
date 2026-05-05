@@ -1,0 +1,34 @@
+[
+  {
+    "name": "field-add-simple",
+    "request": "Add a Picklist field Account_Tier__c on Lead with values Bronze, Silver, Gold. Default to Bronze. This is for the Krahnborn org."
+  },
+  {
+    "name": "access-grant-via-permset",
+    "request": "Give Tonya read+edit access to the Industry field on Account in the Krahnborn org. She's a sales user."
+  },
+  {
+    "name": "profile-edit-attempt",
+    "request": "Update the Standard profile in our Krahnborn org to give edit access on Lead.Status."
+  },
+  {
+    "name": "ambiguous-tier",
+    "request": "Add a field to track customer tier on accounts."
+  },
+  {
+    "name": "multi-object-checkbox",
+    "request": "Add a checkbox field Has_VIP_Customer__c on both Account and Contact in Krahnborn. Sales reps need to check it manually."
+  },
+  {
+    "name": "validation-rule",
+    "request": "Add a validation rule on Opportunity in Krahnborn that requires CloseDate to be at least 30 days in the future when Stage moves past Qualification."
+  },
+  {
+    "name": "doc-only",
+    "request": "Document the steps for onboarding a new sales rep in our Krahnborn org."
+  },
+  {
+    "name": "create-new-permset-needed",
+    "request": "Set up a separate access tier for our new Customer Success role in Krahnborn — they should see all Cases and Contacts but not Opportunities. We don't have a permset for them yet."
+  }
+]
