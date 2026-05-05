@@ -84,19 +84,25 @@ For everything else (\`sf project deploy start\`, \`sf apex run test\`, \`git\`,
 
 ## How to do the work
 
-1. Read the \`work_identifier\` payload's \`metadata_changes\`, \`execution_notes\`, and \`complexity_factors\`. These are your spec.
-2. If the spec calls for verifying state in the org first (e.g., "check FLS for Tonya's profile"), use \`{SCRATCH_QUERY}\` or \`{SCRATCH_DESCRIBE}\` to gather what you need before editing.
+1. Read the \`work_identifier\` payload's \`metadata_changes\`, \`permission_grants\`, \`execution_notes\`, and \`complexity_factors\`. These are your spec.
+2. If the spec calls for verifying state in the org first (e.g., "check FLS for Tonya's role"), use \`{SCRATCH_QUERY}\` or \`{SCRATCH_DESCRIBE}\` to gather what you need before editing.
 3. Make the metadata edits via \`Read\` + \`Edit\` / \`Write\`. Salesforce metadata is XML; preserve formatting, attribute order, and self-closing-tag style of the existing file.
-4. Deploy: \`sf project deploy start -d <changed-paths>\`. Repeat \`-d\` per path; the CLI does NOT accept comma-separated lists.
-5. If the deploy fails, READ the error carefully. Common patterns:
+4. **Apply permission grants**. For each entry in \`permission_grants[]\`:
+   - \`strategy: "extend_existing"\` — open \`force-app/main/default/permissionsets/<permission_set>.permissionset-meta.xml\` and add the requested \`<fieldPermissions>\` and \`<objectPermissions>\` blocks. Do NOT touch any other block. If the permset file doesn't exist, the registry is wrong — STOP and emit \`needs_input\`.
+   - \`strategy: "create_new"\` — Work Identifier should have flagged this with a blocker, so you should not see it on a first pass. If you do, STOP and emit \`needs_input\`. On resume after human confirmation, create \`force-app/main/default/permissionsets/<permission_set>.permissionset-meta.xml\` from scratch with \`<label>\`, \`<hasActivationRequired>false</hasActivationRequired>\`, \`<description>\`, and the requested \`<fieldPermissions>\` / \`<objectPermissions>\` entries.
+   - For each field grant: emit a \`<fieldPermissions>\` block with \`<field>Object.Field__c</field>\`, \`<readable>true</readable>\`, and \`<editable>\` true if access is "edit" else false.
+   - For each object grant: emit \`<objectPermissions>\` with \`<object>Object</object>\` and the boolean flags matching the requested CRUD list (\`allowRead\`, \`allowCreate\`, \`allowEdit\`, \`allowDelete\`, \`viewAllRecords\`, \`modifyAllRecords\`).
+   - **Never** emit a \`<userPermissions>\` block unless the work spec explicitly calls one out — those are dangerous.
+5. Deploy: \`sf project deploy start -d <changed-paths>\`. Repeat \`-d\` per path; the CLI does NOT accept comma-separated lists.
+6. If the deploy fails, READ the error carefully. Common patterns:
    - \`Field does not exist\` → you referenced a wrong API name; verify with describe.
-   - \`Profile must declare visibility\` → you edited a profile XML and the field needs \`<readable>\` or \`<editable>\` set.
+   - \`Profile must declare visibility\` → DO NOT edit profile XML. The fix is a permission set; emit \`needs_input\` if the work_identifier didn't supply one.
    - \`No package for source\` → the path you passed isn't tracked; widen the \`-d\` argument.
    Diagnose, fix, redeploy. You have UP TO 3 RETRIES on the same failing operation. After 3 unsuccessful attempts on the same problem, STOP and emit \`status: "needs_input"\` with the failure history.
-6. Run tests: \`sf apex run test --result-format human --code-coverage --wait 10\` (the \`--wait\` blocks until completion). If tests don't exist for the touched area, that's acceptable — note it.
-7. Commit: \`git add <paths>\` (specific paths, not \`-A\`) and \`git commit -m "<short message>"\`. Use the present-tense imperative ("Add Case.Task__c FLS for Standard profile"), one line, ~70 chars.
-8. Push: \`git push -u origin <branch_name>\`.
-9. Open PR: \`gh pr create --base main --title "<title>" --body "<body>"\`. Pass the body via a heredoc. PR body must include the four sections below (rendered as markdown headings).
+7. Run tests: \`sf apex run test --result-format human --code-coverage --wait 10\` (the \`--wait\` blocks until completion). If tests don't exist for the touched area, that's acceptable — note it.
+8. Commit: \`git add <paths>\` (specific paths, not \`-A\`) and \`git commit -m "<short message>"\`. Use the present-tense imperative ("Add Case.Task__c FLS to Sales_User_Account_Fields permset"), one line, ~70 chars.
+9. Push: \`git push -u origin <branch_name>\`.
+10. Open PR: \`gh pr create --base main --title "<title>" --body "<body>"\`. Pass the body via a heredoc. PR body must include the four sections below (rendered as markdown headings).
 
 ## PR body required sections
 

@@ -17,6 +17,7 @@ import {
   buildWorkIdentifierUserPrompt,
   buildWorkIdentifierResumePrompt,
 } from './work-identifier-agent.js';
+import { loadClientConfig } from '../config/clients.js';
 import {
   EXECUTION_CONFIG,
   type ExecutionPayload,
@@ -118,9 +119,14 @@ export async function runWorkIdentifier(
   triage: TriagePayload,
   routed: RouterPayload,
 ): Promise<AgentResult<WorkIdentifierPayload>> {
+  const permissionSets = routed.client
+    ? await loadClientConfig(routed.client)
+        .then((c) => c.permission_sets)
+        .catch(() => [])
+    : [];
   return runAgent<WorkIdentifierPayload>(
     WORK_IDENTIFIER_CONFIG,
-    buildWorkIdentifierUserPrompt(rawRequest, triage, routed),
+    buildWorkIdentifierUserPrompt(rawRequest, triage, routed, permissionSets),
   );
 }
 

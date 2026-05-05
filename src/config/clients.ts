@@ -3,11 +3,17 @@ import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { env } from './env.js';
 
+export interface RolePermissionSet {
+  name: string;
+  description: string;
+}
+
 export interface ClientConfig {
   name: string;
   repo_remote: string | null;
   repo_local: string | null;
   sf_alias: string | null;
+  permission_sets: RolePermissionSet[];
 }
 
 /**
@@ -21,7 +27,11 @@ export interface ClientConfig {
  *   - Remote: git@github.com:org/repo.git
  *   - Local: ~/Salesforce/KRAHN/Krahn-Agent-Project
  *
- * Missing fields return null. The body of the file is otherwise free-form
+ *   ## Permission sets
+ *   - `Sales_User_Account_Fields` — Sales reps. Custom Account fields...
+ *   - `Field_Tech_Operations` — Field technicians; case + work order data.
+ *
+ * Missing fields return null / []. The body of the file is otherwise free-form
  * markdown for human reading and Router agent context.
  */
 export async function loadClientConfig(name: string): Promise<ClientConfig> {
@@ -36,7 +46,32 @@ export async function loadClientConfig(name: string): Promise<ClientConfig> {
     /^\s*-\s+`?sf`?\s+alias:\s*`?([A-Za-z0-9_\-]+)`?/im,
   );
 
-  return { name, repo_remote, repo_local, sf_alias };
+  const permission_sets = parsePermissionSets(md);
+
+  return { name, repo_remote, repo_local, sf_alias, permission_sets };
+}
+
+function parsePermissionSets(md: string): RolePermissionSet[] {
+  // Find the "## Permission sets" section and parse bullets like:
+  //   - `Sales_User_Account_Fields` — Sales reps. ...
+  //   - Sales_User_Account_Fields - Sales reps. ...
+  // We accept either em-dash, en-dash, or a plain hyphen as the separator
+  // between the permset name and its description, and the name may or may
+  // not be backtick-wrapped.
+  const sectionMatch = md.match(
+    /^##\s*Permission\s*sets\s*$([\s\S]*?)(?=^##\s|\Z)/im,
+  );
+  if (!sectionMatch || !sectionMatch[1]) return [];
+  const section = sectionMatch[1];
+
+  const bulletRe =
+    /^\s*-\s+`?([A-Za-z0-9_]+)`?\s*[—–-]\s*(.+?)\s*$/gm;
+  const out: RolePermissionSet[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = bulletRe.exec(section)) !== null) {
+    if (m[1] && m[2]) out.push({ name: m[1], description: m[2] });
+  }
+  return out;
 }
 
 function matchLine(text: string, re: RegExp): string | null {
