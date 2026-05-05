@@ -113,12 +113,20 @@ async function sf(cwd: string, args: string[]): Promise<void> {
 }
 
 async function assertCleanTree(cwd: string): Promise<void> {
-  const { stdout } = await execFileAsync('git', ['status', '--porcelain'], {
-    cwd,
-  });
+  // Allow untracked files (typically managed-package output that gets
+  // re-pulled on every scratch source-push). They don't represent
+  // committed-but-uncommitted work, and `git checkout main` either ignores
+  // them or fails loudly if they'd be overwritten — both of which are fine.
+  // Modified, staged, deleted, or unmerged paths still trip the check —
+  // those are real human work that we won't risk clobbering.
+  const { stdout } = await execFileAsync(
+    'git',
+    ['status', '--porcelain', '--untracked-files=no'],
+    { cwd },
+  );
   if (stdout.trim().length > 0) {
     throw new Error(
-      `working tree at ${cwd} is not clean — commit or stash before running:\n${stdout}`,
+      `working tree at ${cwd} has uncommitted tracked changes — commit or stash before running:\n${stdout}`,
     );
   }
 }
