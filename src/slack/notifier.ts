@@ -1,6 +1,10 @@
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import type { PipelineRow } from '../db/pipelines.js';
 import { updatePipeline } from '../db/pipelines.js';
 import { getRecipientUserId, slackClient } from './client.js';
+
+const execFileAsync = promisify(execFile);
 
 interface Ambiguity {
   question: string;
@@ -28,9 +32,34 @@ export async function notifyAwaitingInput(
   } else {
     blockers.forEach((b, i) => lines.push(`*Q${i + 1}:* ${b.question}`));
   }
+
+  // For execution-stage pauses, give the human a one-click link to the
+  // scratch org so they can verify state before answering. Best-effort —
+  // skip silently if `sf` isn't on PATH or the org isn't reachable.
+  if (stage === 'execution' && pipeline.scratch_org_alias) {
+    const url = await scratchLoginUrl(pipeline.scratch_org_alias);
+    if (url) {
+      lines.push('', `*Scratch org:* <${url}|open in browser> (\`${pipeline.scratch_org_alias}\`)`);
+    }
+  }
+
   lines.push('', '_Reply in thread to answer._');
 
   await postToPipelineThread(pipeline, lines.join('\n'));
+}
+
+async function scratchLoginUrl(alias: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(
+      'sf',
+      ['org', 'open', '--target-org', alias, '--url-only', '--json'],
+      { maxBuffer: 4 * 1024 * 1024, timeout: 10_000 },
+    );
+    const parsed = JSON.parse(stdout) as { result?: { url?: string } };
+    return parsed.result?.url ?? null;
+  } catch {
+    return null;
+  }
 }
 
 export async function notifyAwaitingReview(
