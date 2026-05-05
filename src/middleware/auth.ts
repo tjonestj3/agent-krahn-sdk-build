@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { env } from '../config/env.js';
 
 const PUBLIC_PATHS = new Set(['/health']);
-const PUBLIC_PREFIXES = ['/slack/'];
+const PUBLIC_PREFIXES = ['/slack/', '/github/'];
 
 export function registerBearerAuth(app: FastifyInstance): void {
   app.addHook('onRequest', async (req, reply) => {

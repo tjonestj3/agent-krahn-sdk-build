@@ -51,6 +51,21 @@ export async function notifyAwaitingReview(
   await postToPipelineThread(pipeline, lines.join('\n'));
 }
 
+export async function notifyCompleted(pipeline: PipelineRow): Promise<void> {
+  const lines = [
+    `🎉 Pipeline \`${shortId(pipeline.id)}\` complete`,
+    `> ${truncate(pipeline.raw_request, MAX_REQUEST_PREVIEW)}`,
+    '',
+  ];
+  if (pipeline.pr_url) lines.push(`*Merged PR:* <${pipeline.pr_url}>`);
+  if (pipeline.documentation_path) {
+    lines.push(`*Build record:* \`${pipeline.documentation_path}\``);
+  }
+  lines.push('', '_The build is documented in the vault. Pipeline closed._');
+
+  await postToPipelineThread(pipeline, lines.join('\n'));
+}
+
 export async function notifyFailed(
   pipeline: PipelineRow,
   errorMessage: string,

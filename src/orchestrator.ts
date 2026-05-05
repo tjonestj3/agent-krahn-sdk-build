@@ -1,4 +1,9 @@
-import { runRouter, runWorkIdentifier, runExecution } from './agents/runner.js';
+import {
+  runRouter,
+  runWorkIdentifier,
+  runExecution,
+  runDocumentation,
+} from './agents/runner.js';
 import type { AgentResult } from './agents/types.js';
 import {
   type TriagePayload,
@@ -10,6 +15,10 @@ import {
   hasBlocker as workIdentifierHasBlocker,
 } from './agents/work-identifier-agent.js';
 import type { ExecutionPayload } from './agents/execution-agent.js';
+import type {
+  DocumentationPayload,
+  DocumentationContext,
+} from './agents/documentation-agent.js';
 import {
   type ExecutionContext,
   setupExecutionEnvironment,
@@ -21,6 +30,7 @@ import {
   type DiffViolation,
 } from './execution/guard.js';
 import { loadClientConfig } from './config/clients.js';
+import { env } from './config/env.js';
 import {
   type PipelineRow,
   updatePipeline,
@@ -29,6 +39,8 @@ import {
 import {
   notifyAwaitingInput,
   notifyAwaitingReview,
+  notifyCompleted,
+  notifyFailed,
 } from './slack/notifier.js';
 
 export type PausedStage = 'triage' | 'work_identifier' | 'execution';
@@ -51,6 +63,15 @@ export type OrchestratorOutcome =
       routed: RouterPayload;
       work_identifier: WorkIdentifierPayload;
       execution: ExecutionPayload;
+    }
+  | {
+      status: 'completed';
+      pipeline: PipelineRow;
+      triage: TriagePayload;
+      routed: RouterPayload;
+      work_identifier: WorkIdentifierPayload;
+      execution: ExecutionPayload;
+      documentation: DocumentationPayload;
     };
 
 /**
@@ -490,6 +511,123 @@ function formatViolationMessage(violations: DiffViolation[]): string {
     'permission set to extend (or "create new" + the role it serves) and',
     'the agent will redo the work without touching profiles.',
   ].join('\n');
+}
+
+/**
+ * Entry point fired by the GitHub webhook when a pipeline's PR is merged.
+ * Caller has already claimed awaiting_review → running and stamped
+ * merged_at + github_pr_number. We run the Documentation agent and
+ * transition to completed.
+ */
+export async function processPipelineFromMerge(
+  pipeline: PipelineRow,
+): Promise<OrchestratorOutcome> {
+  if (
+    !pipeline.client_id ||
+    !pipeline.triage_payload ||
+    !pipeline.work_identifier_payload ||
+    !pipeline.execution_payload
+  ) {
+    throw new Error(
+      `pipeline ${pipeline.id} missing prior payloads; cannot run documentation`,
+    );
+  }
+
+  const client = await loadClientConfig(pipeline.client_id);
+  if (!client.repo_local) {
+    throw new Error(
+      `vault/clients/${pipeline.client_id}/_index.md is missing "Local:" repo path`,
+    );
+  }
+
+  const routed: RouterPayload = {
+    client: pipeline.client_id,
+    confidence: 'high',
+    reasoning: 'restored from pipeline row for documentation stage',
+    recommended_dev_hub: pipeline.dev_hub_alias,
+    options: [],
+  };
+
+  const mergedAt = pipeline.merged_at ?? new Date().toISOString();
+  const dateOnly = mergedAt.slice(0, 10);
+  const slug = slugify(pipeline.work_identifier_payload.work_classification).slice(0, 60);
+  const filename = `${dateOnly}-${slug}.md`;
+  const vaultPath = `${env.VAULT_PATH}/clients/${pipeline.client_id}/changes`;
+
+  const ctx: DocumentationContext = {
+    pipeline_id: pipeline.id,
+    client: pipeline.client_id,
+    vault_path: vaultPath,
+    vault_filename: filename,
+    repo_local: client.repo_local,
+    branch_name: pipeline.branch_name,
+    pr_url: pipeline.pr_url,
+    pr_number: pipeline.github_pr_number,
+    scratch_org_alias: pipeline.scratch_org_alias,
+    merged_at: mergedAt,
+  };
+
+  await logEvent({
+    pipeline_id: pipeline.id,
+    event_type: 'stage_started',
+    stage: 'documentation',
+  });
+
+  try {
+    const doc = await runDocumentation(
+      pipeline,
+      pipeline.triage_payload,
+      routed,
+      pipeline.work_identifier_payload,
+      pipeline.execution_payload,
+      ctx,
+    );
+
+    const completed = await updatePipeline(pipeline.id, {
+      status: 'completed',
+      current_stage: null,
+      documentation_payload: doc.data,
+      documentation_path: doc.data.vault_path,
+      session_id: doc.sessionId,
+    });
+
+    await logEvent({
+      pipeline_id: pipeline.id,
+      event_type: 'stage_completed',
+      stage: 'documentation',
+      payload: doc.data,
+    });
+
+    await notifyCompleted(completed);
+
+    return {
+      status: 'completed',
+      pipeline: completed,
+      triage: pipeline.triage_payload,
+      routed,
+      work_identifier: pipeline.work_identifier_payload,
+      execution: pipeline.execution_payload,
+      documentation: doc.data,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const failed = await updatePipeline(pipeline.id, { status: 'failed' }).catch(() => null);
+    await logEvent({
+      pipeline_id: pipeline.id,
+      event_type: 'stage_failed',
+      stage: 'documentation',
+      payload: { error: message },
+    }).catch(() => {});
+    if (failed) await notifyFailed(failed, message, 'documentation');
+    throw err;
+  }
+}
+
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
 }
 
 /**

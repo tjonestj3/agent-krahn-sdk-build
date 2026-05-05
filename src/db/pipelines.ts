@@ -2,6 +2,7 @@ import { supabase } from './client.js';
 import type { TriagePayload } from '../agents/triage-agent.js';
 import type { WorkIdentifierPayload } from '../agents/work-identifier-agent.js';
 import type { ExecutionPayload } from '../agents/execution-agent.js';
+import type { DocumentationPayload } from '../agents/documentation-agent.js';
 
 export type PipelineStatus =
   | 'running'
@@ -20,9 +21,13 @@ export interface PipelineRow {
   triage_payload: TriagePayload | null;
   work_identifier_payload: WorkIdentifierPayload | null;
   execution_payload: ExecutionPayload | null;
+  documentation_payload: DocumentationPayload | null;
+  documentation_path: string | null;
   scratch_org_alias: string | null;
   branch_name: string | null;
   pr_url: string | null;
+  github_pr_number: number | null;
+  merged_at: string | null;
   slack_channel_id: string | null;
   slack_message_ts: string | null;
   status: PipelineStatus;
@@ -92,6 +97,61 @@ export async function getPipelineBySlackThread(
     .maybeSingle();
 
   if (error) throw new Error(`getPipelineBySlackThread: ${error.message}`);
+  return (data as PipelineRow | null) ?? null;
+}
+
+/**
+ * Look up the pipeline whose merged PR matches a GitHub webhook delivery.
+ * Tries pr_url first (set by the Execution agent), then github_pr_number
+ * (which the webhook handler may set on first contact). Returns null if
+ * the PR is unknown — webhook should ack 200 and move on.
+ */
+export async function getPipelineByPr(args: {
+  prUrl?: string | null;
+  prNumber?: number | null;
+}): Promise<PipelineRow | null> {
+  if (args.prUrl) {
+    const { data, error } = await supabase
+      .from('pipelines')
+      .select()
+      .eq('pr_url', args.prUrl)
+      .maybeSingle();
+    if (error) throw new Error(`getPipelineByPr(url): ${error.message}`);
+    if (data) return data as PipelineRow;
+  }
+  if (args.prNumber != null) {
+    const { data, error } = await supabase
+      .from('pipelines')
+      .select()
+      .eq('github_pr_number', args.prNumber)
+      .maybeSingle();
+    if (error) throw new Error(`getPipelineByPr(num): ${error.message}`);
+    if (data) return data as PipelineRow;
+  }
+  return null;
+}
+
+/**
+ * Atomically flip a pipeline from awaiting_review → running with stage set
+ * to documentation. Returns the row on success, or null if the pipeline
+ * was no longer in awaiting_review (idempotent against duplicate webhooks).
+ */
+export async function claimForDocumentation(
+  id: string,
+): Promise<PipelineRow | null> {
+  const { data, error } = await supabase
+    .from('pipelines')
+    .update({
+      status: 'running',
+      current_stage: 'documentation',
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .eq('status', 'awaiting_review')
+    .select()
+    .maybeSingle();
+
+  if (error) throw new Error(`claimForDocumentation: ${error.message}`);
   return (data as PipelineRow | null) ?? null;
 }
 

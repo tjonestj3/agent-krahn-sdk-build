@@ -17,6 +17,7 @@ export const env = {
   SLACK_SIGNING_SECRET: required('SLACK_SIGNING_SECRET'),
   SLACK_USER_EMAIL: process.env.SLACK_USER_EMAIL ?? 'thomas@krahnborn.com',
   SLACK_USER_NAME_FALLBACK: process.env.SLACK_USER_NAME_FALLBACK ?? 'Thomas Jones',
+  GITHUB_WEBHOOK_SECRET: required('GITHUB_WEBHOOK_SECRET'),
   PORT: Number(process.env.PORT ?? 3000),
   VAULT_PATH: process.env.KRAHNBORN_VAULT_PATH ?? `${process.env.HOME}/vault`,
 } as const;

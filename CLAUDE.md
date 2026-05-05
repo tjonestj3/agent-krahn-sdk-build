@@ -11,9 +11,11 @@ This file is just session-state and decisions made outside those docs.
 ## Where we are
 
 **Phase 0 shipped (commit `420e3dd`).** Phase 1 milestones:
-- M1 (committed `811b6a1`): Triage agent + pause/resume cycle.
-- M2 (committed `7494008` + `7b9a58a`): Work Identifier agent, pre-baked Router context, MCP runtime lockdown.
-- M3 (uncommitted): **Execution agent** + scratch-org plumbing. Pipeline is now Triage → Router → Work Identifier → Execution, ending at `awaiting_review` with a real GitHub PR.
+- M1 (`811b6a1`): Triage agent + pause/resume cycle.
+- M2 (`7494008` + `7b9a58a`): Work Identifier agent, pre-baked Router context, MCP runtime lockdown.
+- M3 (`1e9afbb`): Execution agent + scratch-org plumbing.
+- M3.5 (`f499a18` async, `0e3ced6` bearer auth, `ef120b8` Slack `/events`, `6922d5c` notifier DMs, `286f785` thread-reply resume): full Slack-driven pause/resume loop.
+- M4 (in progress): profile lockdown (`68adebc`), permission-set architecture (`e1e029c`), Documentation agent + GitHub PR-merge webhook (uncommitted). Pipeline is now Triage → Router → Work Identifier → Execution → (PR merged via webhook) → Documentation → `completed`.
 
 **What exists:**
 - `src/index.ts` — Fastify boot
@@ -43,14 +45,12 @@ This file is just session-state and decisions made outside those docs.
 
 **Typecheck passes (`npx tsc --noEmit`).**
 
-**To bring up M3:**
-1. Run `db/migrations/003_add_execution_columns.sql` in Supabase SQL editor.
-2. Make sure `gh` is authed (`gh auth status`) and SSH-to-GitHub works for the Krahnborn repo. The agent uses `gh pr create` directly.
-3. Make sure the Krahnborn repo working tree at `~/Salesforce/KRAHN/Krahn-Agent-Project/` is clean before submitting a request — `setupExecutionEnvironment` refuses to start if not.
-4. Restart `npm run dev`.
-5. `npm run request -- "your raw request"`. Happy path now ends at `status: 'awaiting_review'` with a real `pr_url`. The scratch org survives 7 days for human review.
-
-## Pipeline status semantics
+**To bring up M4 (full pipeline through Documentation):**
+1. Run all unrun migrations in Supabase SQL editor: `004_add_slack_columns.sql`, `005_add_documentation_columns.sql` (and earlier ones if the project is fresh).
+2. Make sure `gh` is authed and SSH-to-GitHub works.
+3. Set `GITHUB_WEBHOOK_SECRET` in `.env` (any random string ≥ 16 chars). On the GitHub repo, configure a webhook to `POST /github/webhook` with the same secret, content-type `application/json`, subscribed to "Pull requests".
+4. Working tree clean at `~/Salesforce/KRAHN/Krahn-Agent-Project/` before each request.
+5. `npm run dev`. Submit via `npm run request -- "..."`; or via Slack DM (the bot DMs you on pause; reply in the thread to resume). Merging the PR fires the webhook → Documentation runs → pipeline reaches `completed` and the build record lands at `vault/clients/<client>/changes/<date>-<slug>.md`.
 
 ## Pipeline status semantics
 
@@ -58,11 +58,11 @@ This file is just session-state and decisions made outside those docs.
 |---|---|
 | `running` | Agents currently executing |
 | `awaiting_input` | An agent flagged a blocker ambiguity; needs human answer before proceeding. Check `current_stage` to know which agent paused. |
-| `awaiting_review` | Execution opened a PR. Pipeline waits here until the PR is merged (Phase 3 will resume into Documentation; for now this is terminal). |
-| `completed` | (Phase 3+) All stages including Documentation finished. M3 doesn't reach this state. |
+| `awaiting_review` | Execution opened a PR. Pipeline waits here until the GitHub PR-merge webhook fires. The diff guard rejects any PR touching Profile metadata (closes the PR, resets the branch, pauses to `awaiting_input`). |
+| `completed` | Documentation agent has written the build record to `vault/clients/<client>/changes/<date>-<slug>.md`. Terminal. |
 | `failed` | An agent or orchestrator step threw; see `pipeline_events.event_type = 'stage_failed'` for the error |
 
-`current_stage` values you may see while paused: `'triage'`, `'work_identifier'`, `'execution'`. (Router doesn't pause — it always returns a routed payload, even at low confidence.)
+`current_stage` values you may see: `'triage'`, `'work_identifier'`, `'execution'`, `'documentation'`. (Router doesn't pause; the GitHub webhook flips `awaiting_review` → `running` with `current_stage='documentation'`.)
 
 ## Decisions made (Phase 0 open questions resolved)
 

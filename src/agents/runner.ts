@@ -24,7 +24,17 @@ import {
   buildExecutionUserPrompt,
   buildExecutionResumePrompt,
 } from './execution-agent.js';
+import {
+  DOCUMENTATION_CONFIG,
+  type DocumentationPayload,
+  type DocumentationContext,
+  buildDocumentationUserPrompt,
+} from './documentation-agent.js';
 import type { ExecutionContext } from '../execution/setup.js';
+import type { PipelineRow } from '../db/pipelines.js';
+import type { TriagePayload as Triage } from './triage-agent.js';
+import type { RouterPayload as Routed } from './router-agent.js';
+import type { WorkIdentifierPayload as Wi } from './work-identifier-agent.js';
 
 export interface RunOptions {
   resume?: string;
@@ -163,5 +173,19 @@ export async function resumeExecution(
     { ...EXECUTION_CONFIG, cwd: ctx.repo_local },
     buildExecutionResumePrompt(answer),
     { resume: sessionId },
+  );
+}
+
+export async function runDocumentation(
+  pipeline: PipelineRow,
+  triage: Triage,
+  routed: Routed,
+  wi: Wi,
+  exec: ExecutionPayload,
+  ctx: DocumentationContext,
+): Promise<AgentResult<DocumentationPayload>> {
+  return runAgent<DocumentationPayload>(
+    { ...DOCUMENTATION_CONFIG, cwd: ctx.repo_local },
+    buildDocumentationUserPrompt(pipeline, triage, routed, wi, exec, ctx),
   );
 }
