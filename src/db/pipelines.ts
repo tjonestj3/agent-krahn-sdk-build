@@ -11,7 +11,8 @@ export type PipelineStatus =
   | 'awaiting_input'
   | 'awaiting_review'
   | 'completed'
-  | 'failed';
+  | 'failed'
+  | 'cancelled';
 
 export interface PipelineRow {
   id: string;

@@ -11,7 +11,10 @@ The pipeline is async by design. A submitted request returns immediately with `s
 
 ## What the human sees
 
-1. **Submit a request** (currently via `npm run request -- "..."` or `POST /requests`; future: a Slack slash command).
+1. **Submit a request** — three equivalent ways:
+   - `npm run request -- "..."` (CLI).
+   - `POST /requests` directly (HTTP, bearer auth).
+   - **`/krahn` slash command in Slack** → opens a modal (Client / Urgency / Change type / Title / Description) → submit POSTs to `/requests` with `source: 'slack-console'`. Served by the **Krahn Console** Slack app, a separate process from the Notifier — see [Architecture](#architecture) for the split.
 2. **A Slack DM arrives** when the pipeline pauses or terminates:
    - `🟡 Pipeline ... paused at <stage>` with the question, plus (for execution-stage pauses) a link to open the scratch org in the browser.
    - `✅ Pipeline ... opened a PR` with the PR link, branch name, and scratch alias.
@@ -30,8 +33,8 @@ All DMs for a given pipeline land in a single thread, so the conversation about 
 
 ## What you cannot do via Slack (yet)
 
-- Submit a new request from a Slack message. (Use `npm run request --` or `POST /requests`.)
-- Cancel a running pipeline.
-- Ask the bot for status. (Use `npm run pipelines` or `GET /requests/<id>`.)
+- Submit a request from a free-form Slack message. (Possible via the Krahn Console `/krahn` modal; a chat-style submission isn't.)
+- Cancel a running pipeline from Slack. (Cancel button on the Notifier DM is in flight.)
+- Ask the bot for status. The Krahn Console **App Home** tab renders an inflight-pipelines dashboard — it reads Supabase directly, not through `/requests`. For terminal queries: `npm run pipelines` or `GET /requests/<id>`.
 
-These are intentional Phase-1 omissions — they require thinking about authorization, identity, and rate-limiting that a single-user CLI doesn't.
+These omissions exist because cross-user authorization, identity, and rate-limiting were Phase-1 deferrals. The Krahn Console closes the submission gap for allowlisted users (`SLACK_ALLOWED_USERS`) without changing the trust model.

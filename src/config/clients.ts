@@ -14,6 +14,13 @@ export interface ClientConfig {
   repo_local: string | null;
   sf_alias: string | null;
   permission_sets: RolePermissionSet[];
+  /**
+   * Names of MCP servers (resolved against src/mcp/registry.ts) this client's
+   * pipelines are allowed to use. Empty/missing section ⇒ no MCP access for
+   * any agent. The runtime registry decides which agents pick them up via
+   * SubagentSpec.mcpServers.
+   */
+  mcp_servers: string[];
 }
 
 /**
@@ -21,7 +28,7 @@ export interface ClientConfig {
  * fields out of plain markdown. Format expected:
  *
  *   ## Org
- *   - `sf` alias: `krahn-admin`
+ *   - `sf` alias: `krahn`
  *
  *   ## Repo
  *   - Remote: git@github.com:org/repo.git
@@ -30,6 +37,9 @@ export interface ClientConfig {
  *   ## Permission sets
  *   - `Sales_User_Account_Fields` — Sales reps. Custom Account fields...
  *   - `Field_Tech_Operations` — Field technicians; case + work order data.
+ *
+ *   ## MCP servers
+ *   - `sf-read` — read-only Salesforce. Scout uses this for prod/scratch reads.
  *
  * Missing fields return null / []. The body of the file is otherwise free-form
  * markdown for human reading and Router agent context.
@@ -47,8 +57,9 @@ export async function loadClientConfig(name: string): Promise<ClientConfig> {
   );
 
   const permission_sets = parsePermissionSets(md);
+  const mcp_servers = parseMcpServers(md);
 
-  return { name, repo_remote, repo_local, sf_alias, permission_sets };
+  return { name, repo_remote, repo_local, sf_alias, permission_sets, mcp_servers };
 }
 
 function parsePermissionSets(md: string): RolePermissionSet[] {
@@ -79,6 +90,34 @@ function parsePermissionSets(md: string): RolePermissionSet[] {
     const bullet = line.match(bulletRe);
     if (bullet && bullet[1] && bullet[2]) {
       out.push({ name: bullet[1], description: bullet[2] });
+    }
+  }
+  return out;
+}
+
+function parseMcpServers(md: string): string[] {
+  // Find the "## MCP servers" section and parse bullets like:
+  //   - `sf-read` — read-only Salesforce. Use the prod alias above.
+  //   - sf-read - read-only Salesforce.
+  // Names are extracted from the leading `name` token; the description is
+  // ignored (it's purely for human readers). Same line-by-line scan style
+  // as parsePermissionSets — see the note there about JS regex EOF anchors.
+  const lines = md.split('\n');
+  let inSection = false;
+  const out: string[] = [];
+  const headingRe = /^##\s+(.*)$/;
+  const bulletRe = /^\s*-\s+`?([A-Za-z0-9_\-]+)`?(?:\s|$)/;
+
+  for (const line of lines) {
+    const heading = line.match(headingRe);
+    if (heading) {
+      inSection = /^MCP\s*servers\s*$/i.test(heading[1]!.trim());
+      continue;
+    }
+    if (!inSection) continue;
+    const bullet = line.match(bulletRe);
+    if (bullet && bullet[1]) {
+      out.push(bullet[1]);
     }
   }
   return out;

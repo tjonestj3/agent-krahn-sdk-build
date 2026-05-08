@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>krahnborn — Build Wiki</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif; color: #1f2328; background: #f6f8fa; }
+  .app { display: grid; grid-template-columns: 320px 1fr; height: 100vh; }
+  aside { background: #fff; border-right: 1px solid #d0d7de; overflow-y: auto; display: flex; flex-direction: column; }
+  aside header { padding: 20px 16px 12px; border-bottom: 1px solid #d0d7de; }
+  aside h1 { margin: 0 0 4px 0; font-size: 18px; }
+  .stats { font-size: 12px; color: #57606a; }
+  .search { padding: 12px 16px; border-bottom: 1px solid #d0d7de; }
+  .search input { width: 100%; padding: 6px 10px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 13px; }
+  .records { list-style: none; margin: 0; padding: 0; flex: 1; overflow-y: auto; }
+  .record { padding: 10px 16px; border-bottom: 1px solid #eaeef2; cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+  .record:hover { background: #f6f8fa; }
+  .record.active { background: #ddf4ff; border-left: 3px solid #0969da; padding-left: 13px; }
+  .rec-date { font-size: 11px; color: #57606a; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .rec-title { font-size: 13px; font-weight: 500; }
+  .rec-points { font-size: 11px; color: #57606a; }
+  main { overflow-y: auto; padding: 32px 48px 64px; max-width: 920px; }
+  main h1 { margin-top: 0; font-size: 28px; border-bottom: 1px solid #d0d7de; padding-bottom: 8px; }
+  main h2 { font-size: 20px; margin-top: 28px; padding-bottom: 4px; border-bottom: 1px solid #eaeef2; }
+  main h3 { font-size: 16px; margin-top: 20px; color: #57606a; }
+  main p { line-height: 1.6; }
+  main blockquote { margin: 0; padding: 8px 16px; border-left: 4px solid #d0d7de; color: #57606a; background: #fff; }
+  main code { background: #eff1f3; padding: 0.1em 0.4em; border-radius: 4px; font-size: 0.9em; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  main pre.code { background: #0d1117; color: #e6edf3; padding: 14px 16px; border-radius: 8px; overflow-x: auto; }
+  main pre.code code { background: transparent; padding: 0; color: inherit; }
+  main table { border-collapse: collapse; width: 100%; margin-top: 8px; background: #fff; }
+  main th, main td { border: 1px solid #d0d7de; padding: 6px 12px; text-align: left; font-size: 13px; }
+  main th { background: #f6f8fa; }
+  main hr { border: none; border-top: 1px solid #d0d7de; margin: 24px 0; }
+  main a { color: #0969da; }
+  .empty { padding: 32px; color: #57606a; text-align: center; }
+  .meta { background: #fff; border: 1px solid #d0d7de; border-radius: 8px; padding: 12px 16px; margin-bottom: 24px; font-size: 13px; color: #57606a; display: flex; gap: 24px; flex-wrap: wrap; }
+  .meta strong { color: #1f2328; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <header>
+      <h1>krahnborn — Build Wiki</h1>
+      <div class="stats">2 builds · 3 pts shipped</div>
+    </header>
+    <div class="search">
+      <input id="q" type="search" placeholder="Filter…" autocomplete="off">
+    </div>
+    <ul class="records" id="records">
+        <li class="record" data-idx="0">
+          <span class="rec-date">2026-05-06</span>
+          <span class="rec-title">Add custom Checkbox field Approved_Budget__c on Account</span>
+          <span class="rec-points">1 pts</span>
+        </li>
+
+        <li class="record" data-idx="1">
+          <span class="rec-date">2026-05-05</span>
+          <span class="rec-title">Add optional Currency field Annual_Contract_Value__c on Opportunity and grant Sales reps read+edit access</span>
+          <span class="rec-points">2 pts</span>
+        </li></ul>
+  </aside>
+  <main id="main"><div class="empty">Select a build on the left.</div></main>
+</div>
+<script>
+  const RECORDS = [{"filename":"2026-05-06-add-custom-checkbox-field-approved-budget-c-on-account.md","frontmatter":{"type":"build_record","date":"2026-05-06","client":"krahnborn","pipeline_id":"2d902362-45ec-48bd-9c39-b7edced1a132","pr_number":7,"pr_url":"https://github.com/tjonestj3/Krahborn-Agent-Internal/pull/7","classification":"Add custom Checkbox field Approved_Budget__c on Account","story_points":1},"bodyHtml":"\u003ch1 id=\"add-custom-checkbox-field-approvedbudgetc-on-account\">Add custom Checkbox field Approved_Budget__c on Account\u003c/h1>\n\u003ch2 id=\"summary\">Summary\u003c/h2>\n\u003cp>A new custom Checkbox field \u003ccode>Approved_Budget__c\u003c/code> (label: \u003cstrong>Approved Budget\u003c/strong>) was added to the Account object to allow sales reps to flag accounts with approved budgets. The field defaults to unchecked (\u003ccode>false\u003c/code>). The \u003ccode>Sales_User_Account_Fields\u003c/code> permission set was extended to grant read + edit access, making the field visible and editable to sales reps assigned that permset.\u003c/p>\n\u003ch2 id=\"original-request\">Original request\u003c/h2>\n\u003cblockquote>Client: krahnborn\u003cbr>Urgency: normal\u003cbr>Change type: field\u003cbr>\u003cbr>Title: Add new Approved Budget field to the account\u003cbr>\u003cbr>Description:\u003cbr>see title, thanks friend!\u003c/blockquote>\n\u003ch2 id=\"what-changed\">What changed\u003c/h2>\n\u003ch3 id=\"schema\">Schema\u003c/h3>\n\u003cul>\u003cli>\u003cstrong>Approved_Budget__c\u003c/strong> — new Checkbox field on Account with default value false (unchecked)\u003c/li>\u003c/ul>\n\u003ch3 id=\"access\">Access\u003c/h3>\n\u003cul>\u003cli>\u003cstrong>Sales_User_Account_Fields\u003c/strong> (extended) — read + edit access on Account.Approved_Budget__c for sales reps\u003c/li>\u003c/ul>\n\u003ch2 id=\"how-to-verify\">How to verify\u003c/h2>\n\u003col>\u003cli>Log in to the scratch org.\u003c/li>\u003cli>Navigate to \u003cstrong>Setup → Object Manager → Account → Fields &amp; Relationships\u003c/strong>.\u003c/li>\u003cli>Confirm \u003cstrong>Approved Budget\u003c/strong> (\u003ccode>Approved_Budget__c\u003c/code>) appears as a \u003cstrong>Checkbox\u003c/strong> field with default value \u003ccode>false\u003c/code>.\u003c/li>\u003cli>Navigate to \u003cstrong>Setup → Permission Sets → Sales User Account Fields → Object Settings → Accounts\u003c/strong>.\u003c/li>\u003cli>Confirm \u003cstrong>Approved Budget\u003c/strong> shows \u003cstrong>Read Access\u003c/strong> ✓ and \u003cstrong>Edit Access\u003c/strong> ✓.\u003c/li>\u003cli>Open any Account record and verify the \u003cstrong>Approved Budget\u003c/strong> checkbox is visible and editable for a user assigned the Sales User Account Fields permission set.\u003c/li>\u003c/ol>\n\u003ch2 id=\"rollback\">Rollback\u003c/h2>\n\u003cp>Simple rollback: \u003ccode>git revert &lt;commit-hash&gt;\u003c/code> and redeploy \u003ccode>main\u003c/code>. The field will be deleted from the org as part of the redeployment. \u003cstrong>Warning:\u003c/strong> if any records have \u003ccode>Approved_Budget__c = true\u003c/code> at rollback time, that data will be lost when the field is deleted.\u003c/p>\n\u003ch2 id=\"build-trail\">Build trail\u003c/h2>\n\u003ctable>\u003cthead>\u003ctr>\u003cth>Stage\u003c/th>\u003cth>Result\u003c/th>\u003c/tr>\u003c/thead>\u003ctbody>\u003ctr>\u003ctd>Triage\u003c/td>\u003ctd>Add Approved_Budget__c checkbox field (optional) to Account · change_type: \u003ccode>add_field\u003c/code> · urgency: \u003ccode>no_rush\u003c/code>\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Router\u003c/td>\u003ctd>client: \u003ccode>krahnborn\u003c/code> · dev hub: \u003ccode>krahn\u003c/code> (high confidence)\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Work Identifier\u003c/td>\u003ctd>1 pt · permission_strategy: \u003ccode>extend_existing\u003c/code>\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Execution\u003c/td>\u003ctd>branch \u003ccode>krahnborn-os/2d902362-add-custom-checkbox-field-approved-budge\u003c/code> → PR #7\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Merged\u003c/td>\u003ctd>2026-05-06 16:36:49 UTC\u003c/td>\u003c/tr>\u003c/tbody>\u003c/table>\n\u003ch2 id=\"decisions-worth-remembering\">Decisions worth remembering\u003c/h2>\n\u003cul>\u003cli>\u003cstrong>No page layout assignment yet\u003c/strong> — the request did not specify which Account page layout(s) should display the field or which section. A follow-up request should clarify this.\u003c/li>\u003cli>\u003cstrong>Extended Sales_User_Account_Fields\u003c/strong> — we added the field permission to the existing role-based permset rather than creating a new permset, keeping the role registry small and maintainable.\u003c/li>\u003cli>\u003cstrong>Default false (opt-in)\u003c/strong> — the field defaults to unchecked, which is a conservative choice; accounts must be explicitly flagged as having an approved budget.\u003c/li>\u003cli>\u003cstrong>No Apex or validation rules\u003c/strong> — this is a pure metadata change with no custom logic. Future enhancements (e.g., workflow rules or flows triggered by this field) can be added in follow-up requests.\u003c/li>\u003c/ul>"},{"filename":"2026-05-05-add-optional-currency-field-annual-contract-value-c-on-oppor.md","frontmatter":{"type":"build_record","date":"2026-05-05","client":"krahnborn","pipeline_id":"d93320af-4cc5-4ef2-903f-7394e7f633f4","pr_number":4,"pr_url":"https://github.com/tjonestj3/Krahborn-Agent-Internal/pull/4","classification":"Add optional Currency field Annual_Contract_Value__c on Opportunity and grant Sales reps read+edit access","story_points":2},"bodyHtml":"\u003ch1 id=\"add-optional-currency-field-annualcontractvaluec-on-opportunity-and-grant-sales-reps-readedit-access\">Add optional Currency field Annual_Contract_Value__c on Opportunity and grant Sales reps read+edit access\u003c/h1>\n\u003ch2 id=\"summary\">Summary\u003c/h2>\n\u003cp>A new optional Currency custom field — \u003cstrong>Annual Contract Value\u003c/strong> (\u003ccode>Annual_Contract_Value__c\u003c/code>, precision 18, scale 2, no default) — was added to the Opportunity object in the Krahnborn org so that Sales reps can track ACV per deal. The existing \u003ccode>Sales_User_Account_Fields\u003c/code> permission set was extended with read+edit access to the field, making it immediately visible and editable for all users who hold that permset. Existing Opportunity records are unaffected; no page-layout changes were included in this build.\u003c/p>\n\u003ch2 id=\"original-request\">Original request\u003c/h2>\n\u003cblockquote>Add an optional Currency field Annual_Contract_Value__c on Opportunity in the Krahnborn org, no default value. Sales reps need read+edit access to track ACV per opportunity.\u003c/blockquote>\n\u003ch2 id=\"what-changed\">What changed\u003c/h2>\n\u003ch3 id=\"schema\">Schema\u003c/h3>\n\u003cul>\u003cli>\u003cstrong>Opportunity.Annual_Contract_Value__c\u003c/strong> — new Currency field (label: &quot;Annual Contract Value&quot;, precision 18, scale 2, optional/not required, no default value). Created as \u003ccode>force-app/main/default/objects/Opportunity/fields/Annual_Contract_Value__c.field-meta.xml\u003c/code>.\u003c/li>\u003c/ul>\n\u003ch3 id=\"access\">Access\u003c/h3>\n\u003cul>\u003cli>\u003cstrong>Sales_User_Account_Fields\u003c/strong> (extended) — added read+edit (\u003ccode>readable: true\u003c/code>, \u003ccode>editable: true\u003c/code>) on \u003ccode>Opportunity.Annual_Contract_Value__c\u003c/code> for all Sales rep users who hold this permission set.\u003c/li>\u003c/ul>\n\u003ch2 id=\"how-to-verify\">How to verify\u003c/h2>\n\u003col>\u003cli>Log into the scratch org (contact pipeline operator for login URL — \u003ccode>scratch_login_url\u003c/code> was null at pipeline time).\u003c/li>\u003cli>Navigate to \u003cstrong>Setup → Object Manager → Opportunity → Fields &amp; Relationships\u003c/strong> and confirm \u003ccode>Annual_Contract_Value__c\u003c/code> (label: &quot;Annual Contract Value&quot;, type: Currency) is present.\u003c/li>\u003cli>Assign the \u003cstrong>Sales User Account Fields\u003c/strong> permission set to a test user (or yourself).\u003c/li>\u003cli>Open any Opportunity record as that user and confirm the &quot;Annual Contract Value&quot; field is visible and editable.\u003c/li>\u003cli>Enter a currency value (e.g. \u003ccode>$50,000.00\u003c/code>), save, and confirm the value persists without an FLS or permissions error.\u003c/li>\u003c/ol>\n\u003ch2 id=\"rollback\">Rollback\u003c/h2>\n\u003cp>To undo this change, run \u003ccode>git revert &lt;merge commit SHA&gt;\u003c/code> on the main branch, then redeploy with \u003ccode>sf project deploy start\u003c/code> to push the reverted metadata to the org. Alternatively, in Setup manually delete \u003ccode>Opportunity.Annual_Contract_Value__c\u003c/code> (destructive — permanently erases any stored values) and remove the corresponding \u003ccode>&lt;fieldPermissions&gt;\u003c/code> block from \u003ccode>Sales_User_Account_Fields.permissionset-meta.xml\u003c/code>. No data migration or page-layout cleanup is needed for rollback because the field was never added to any page layout in this PR.\u003c/p>\n\u003ch2 id=\"build-trail\">Build trail\u003c/h2>\n\u003ctable>\u003cthead>\u003ctr>\u003cth>Stage\u003c/th>\u003cth>Result\u003c/th>\u003c/tr>\u003c/thead>\u003ctbody>\u003ctr>\u003ctd>Triage\u003c/td>\u003ctd>Add optional Currency field Annual_Contract_Value__c to Opportunity and grant Sales reps read+edit access via permission set · change_type: \u003ccode>add_field\u003c/code> · urgency: \u003ccode>no_rush\u003c/code>\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Router\u003c/td>\u003ctd>client: \u003ccode>krahnborn\u003c/code> · dev hub: \u003ccode>krahn\u003c/code> (\u003ccode>high\u003c/code> confidence)\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Work Identifier\u003c/td>\u003ctd>2 pts · permission_strategy: \u003ccode>extend_existing\u003c/code>\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Execution\u003c/td>\u003ctd>branch \u003ccode>krahnborn-os/d93320af-add-optional-currency-field-annual-contr\u003c/code> → https://github.com/tjonestj3/Krahborn-Agent-Internal/pull/4\u003c/td>\u003c/tr>\u003ctr>\u003ctd>Merged\u003c/td>\u003ctd>2026-05-05T16:49:06Z\u003c/td>\u003c/tr>\u003c/tbody>\u003c/table>\n\u003ch2 id=\"decisions-worth-remembering\">Decisions worth remembering\u003c/h2>\n\u003cul>\u003cli>\u003cstrong>Permset extended, not replaced\u003c/strong>: \u003ccode>Sales_User_Account_Fields\u003c/code> is the only registered Sales-rep permset in the Krahnborn org. It was extended to cover \u003ccode>Opportunity.Annual_Contract_Value__c\u003c/code> despite its Account-scoped name. The Work Identifier flagged this as a non-blocking naming mismatch; the pipeline proceeded and the PR merged without objection. If the permset roster grows, consider a rename or a dedicated Opportunity-scoped permset.\u003c/li>\u003cli>\u003cstrong>Field is optional with no default\u003c/strong>: \u003ccode>required: false\u003c/code> and no \u003ccode>defaultValue\u003c/code> were set per the original request. Zero existing Opportunity records are touched.\u003c/li>\u003cli>\u003cstrong>No page-layout inclusion\u003c/strong>: The field was not added to any Opportunity page layout in this PR. An admin will need to drag it onto the desired layouts (or Lightning Record Pages) before end-users see it outside of a permset check.\u003c/li>\u003cli>\u003cstrong>No Apex test classes in org\u003c/strong>: Both metadata deploys succeeded (Deploy IDs \u003ccode>0AfRL00000eJsKE0A0\u003c/code> and \u003ccode>0AfRL00000eJvGT0A0\u003c/code>) but no Apex tests were run — none exist in the scratch org. This should be noted as a gap if test coverage enforcement is enabled in production deploy pipelines.\u003c/li>\u003cli>\u003cstrong>Currency precision 18, scale 2\u003c/strong>: Standard Salesforce currency formatting. No special rounding or multi-currency considerations were raised; confirm if the org uses Advanced Currency Management (dated exchange rates) for ACV reporting.\u003c/li>\u003c/ul>"}];
+  const main = document.getElementById('main');
+  const list = document.getElementById('records');
+  const q = document.getElementById('q');
+
+  function renderMeta(fm) {
+    const items = [];
+    if (fm.date) items.push('<span><strong>Date:</strong> ' + escape(fm.date) + '</span>');
+    if (fm.story_points != null) items.push('<span><strong>Story points:</strong> ' + escape(fm.story_points) + '</span>');
+    if (fm.pr_url) items.push('<span><strong>PR:</strong> <a href="' + fm.pr_url + '" target="_blank">#' + escape(fm.pr_number ?? '') + '</a></span>');
+    if (fm.pipeline_id) items.push('<span><strong>Pipeline:</strong> <code>' + escape(String(fm.pipeline_id).slice(0, 8)) + '</code></span>');
+    return '<div class="meta">' + items.join('') + '</div>';
+  }
+
+  function escape(s) {
+    return String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  }
+
+  function show(idx) {
+    const r = RECORDS[idx];
+    if (!r) return;
+    main.innerHTML = renderMeta(r.frontmatter) + r.bodyHtml;
+    document.querySelectorAll('.record').forEach((el) => {
+      el.classList.toggle('active', Number(el.dataset.idx) === idx);
+    });
+    history.replaceState(null, '', '#' + encodeURIComponent(r.filename));
+  }
+
+  list.addEventListener('click', (e) => {
+    const li = e.target.closest('.record');
+    if (li) show(Number(li.dataset.idx));
+  });
+
+  q.addEventListener('input', () => {
+    const term = q.value.toLowerCase().trim();
+    document.querySelectorAll('.record').forEach((el) => {
+      const idx = Number(el.dataset.idx);
+      const hay = (RECORDS[idx].frontmatter.classification + ' ' + RECORDS[idx].frontmatter.date).toLowerCase();
+      el.style.display = !term || hay.includes(term) ? '' : 'none';
+    });
+  });
+
+  const hash = decodeURIComponent(location.hash.slice(1));
+  const initialIdx = hash ? RECORDS.findIndex((r) => r.filename === hash) : 0;
+  if (RECORDS.length > 0) show(initialIdx >= 0 ? initialIdx : 0);
+</script>
+</body>
+</html>

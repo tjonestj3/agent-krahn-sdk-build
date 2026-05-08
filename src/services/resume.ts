@@ -22,6 +22,7 @@ import {
 } from '../orchestrator.js';
 import { withClientRepoLock } from '../execution/repo-lock.js';
 import { notifyFailed } from '../slack/notifier.js';
+import { resolveClientMcpServers } from '../mcp/registry.js';
 
 export type ResumableStage = 'triage' | 'work_identifier' | 'execution';
 
@@ -149,7 +150,15 @@ async function runResume(
     }
     await withClientRepoLock(claimed.client_id, async () => {
       const ctx = await rehydrateExecutionContext(claimed);
-      const exec = await resumeExecution(claimed.session_id!, answer, ctx);
+      const mcpServers = await resolveClientMcpServers(
+        claimed.routed_payload?.client ?? claimed.client_id,
+      );
+      const exec = await resumeExecution(
+        claimed.session_id!,
+        answer,
+        ctx,
+        mcpServers,
+      );
       const execRow = await updatePipeline(claimed.id, {
         execution_payload: exec.data,
         session_id: exec.sessionId,

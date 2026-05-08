@@ -1,4 +1,5 @@
 import { query } from '@anthropic-ai/claude-agent-sdk';
+import type { McpServerConfig } from '@anthropic-ai/claude-agent-sdk';
 import type { AgentConfig, AgentResult, AgentTelemetry } from './types.js';
 import {
   ROUTER_CONFIG,
@@ -38,6 +39,14 @@ import type { WorkIdentifierPayload as Wi } from './work-identifier-agent.js';
 
 export interface RunOptions {
   resume?: string;
+  /**
+   * Resolved MCP server map (name → config) made available to the parent
+   * and any subagent that opts in via SubagentSpec.mcpServers. The parent
+   * only sees an MCP tool if its tools list explicitly includes the
+   * `mcp__<server>__<tool>` name; in current usage (Execution agent) the
+   * parent has no MCP tools and only Scout uses them.
+   */
+  mcpServers?: Record<string, McpServerConfig>;
 }
 
 export async function runAgent<T>(
@@ -47,23 +56,29 @@ export async function runAgent<T>(
 ): Promise<AgentResult<T>> {
   // If the agent declares subagents, give the parent the `Agent` tool so it
   // can dispatch via Task — and pass each spec through as an AgentDefinition.
-  // Subagent specs are converted to the shape the SDK expects; no MCPs and
-  // no settings inheritance, same as the parent.
   const hasSubagents =
     config.subagents !== undefined && Object.keys(config.subagents).length > 0;
   const tools = hasSubagents ? [...config.tools, 'Agent'] : [...config.tools];
+  const mcpServers = runOptions?.mcpServers ?? {};
   const agents = hasSubagents
     ? Object.fromEntries(
-        Object.entries(config.subagents!).map(([name, spec]) => [
-          name,
-          {
-            description: spec.description,
-            prompt: spec.prompt,
-            tools: [...spec.tools],
-            model: spec.model,
-            ...(spec.maxTurns !== undefined ? { maxTurns: spec.maxTurns } : {}),
-          },
-        ]),
+        Object.entries(config.subagents!).map(([name, spec]) => {
+          const subagentMcpNames =
+            spec.mcpServers?.filter((n) => mcpServers[n]) ?? [];
+          return [
+            name,
+            {
+              description: spec.description,
+              prompt: spec.prompt,
+              tools: [...spec.tools],
+              model: spec.model,
+              ...(spec.maxTurns !== undefined ? { maxTurns: spec.maxTurns } : {}),
+              ...(subagentMcpNames.length > 0
+                ? { mcpServers: [...subagentMcpNames] }
+                : {}),
+            },
+          ];
+        }),
       )
     : undefined;
 
@@ -73,7 +88,7 @@ export async function runAgent<T>(
       systemPrompt: config.systemPrompt,
       tools,
       allowedTools: tools,
-      mcpServers: {},
+      mcpServers,
       strictMcpConfig: true,
       settingSources: [],
       permissionMode: 'bypassPermissions',
@@ -216,10 +231,12 @@ export async function runExecution(
   routed: RouterPayload,
   workIdentifier: WorkIdentifierPayload,
   ctx: ExecutionContext,
+  mcpServers: Record<string, McpServerConfig> = {},
 ): Promise<AgentResult<ExecutionPayload>> {
   return runAgent<ExecutionPayload>(
     { ...EXECUTION_CONFIG, cwd: ctx.repo_local },
     buildExecutionUserPrompt(rawRequest, triage, routed, workIdentifier, ctx),
+    { mcpServers },
   );
 }
 
@@ -227,11 +244,12 @@ export async function resumeExecution(
   sessionId: string,
   answer: string,
   ctx: ExecutionContext,
+  mcpServers: Record<string, McpServerConfig> = {},
 ): Promise<AgentResult<ExecutionPayload>> {
   return runAgent<ExecutionPayload>(
     { ...EXECUTION_CONFIG, cwd: ctx.repo_local },
     buildExecutionResumePrompt(answer),
-    { resume: sessionId },
+    { resume: sessionId, mcpServers },
   );
 }
 

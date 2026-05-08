@@ -4,6 +4,7 @@ import {
   runExecution,
   runDocumentation,
 } from './agents/runner.js';
+import { resolveClientMcpServers } from './mcp/registry.js';
 import type { AgentResult } from './agents/types.js';
 import {
   type TriagePayload,
@@ -297,12 +298,14 @@ async function runExecutionStage(
       },
     });
 
+    const mcpServers = await resolveClientMcpServers(routed.client);
     const exec = await runExecution(
       pipeline.raw_request,
       triage,
       routed,
       wi,
       ctx,
+      mcpServers,
     );
 
     const afterExec = await updatePipeline(pipeline.id, {

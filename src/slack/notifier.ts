@@ -13,6 +13,37 @@ interface Ambiguity {
 
 const MAX_REQUEST_PREVIEW = 160;
 
+export const CANCEL_PIPELINE_ACTION_ID = 'cancel_pipeline';
+export const OPEN_PR_ACTION_ID = 'open_pr';
+
+/** A single [Cancel] button targeting the given pipeline. */
+function cancelButton(pipelineId: string): Record<string, unknown> {
+  return {
+    type: 'button',
+    action_id: CANCEL_PIPELINE_ACTION_ID,
+    style: 'danger',
+    text: { type: 'plain_text', text: 'Cancel' },
+    value: pipelineId,
+    confirm: {
+      title: { type: 'plain_text', text: 'Cancel this pipeline?' },
+      text: { type: 'mrkdwn', text: 'It will move to status `cancelled`. This cannot be undone.' },
+      confirm: { type: 'plain_text', text: 'Cancel pipeline' },
+      deny: { type: 'plain_text', text: 'Keep it' },
+    },
+  };
+}
+
+/** A url-style [Open PR] button. URL buttons still emit interaction events;
+ *  the interactions route ignores unknown action_ids. */
+function openPrButton(prUrl: string): Record<string, unknown> {
+  return {
+    type: 'button',
+    action_id: OPEN_PR_ACTION_ID,
+    text: { type: 'plain_text', text: 'Open PR' },
+    url: prUrl,
+  };
+}
+
 export async function notifyAwaitingInput(
   pipeline: PipelineRow,
   stage: string,
@@ -45,7 +76,11 @@ export async function notifyAwaitingInput(
 
   lines.push('', '_Reply in thread to answer._');
 
-  await postToPipelineThread(pipeline, lines.join('\n'));
+  const text = lines.join('\n');
+  await postToPipelineThread(pipeline, text, [
+    { type: 'section', text: { type: 'mrkdwn', text } },
+    { type: 'actions', elements: [cancelButton(pipeline.id)] },
+  ]);
 }
 
 async function scratchLoginUrl(alias: string): Promise<string | null> {
@@ -77,7 +112,15 @@ export async function notifyAwaitingReview(
   }
   lines.push('', '_Review and merge when ready._');
 
-  await postToPipelineThread(pipeline, lines.join('\n'));
+  const text = lines.join('\n');
+  const actions: Record<string, unknown>[] = [];
+  if (pipeline.pr_url) actions.push(openPrButton(pipeline.pr_url));
+  actions.push(cancelButton(pipeline.id));
+
+  await postToPipelineThread(pipeline, text, [
+    { type: 'section', text: { type: 'mrkdwn', text } },
+    { type: 'actions', elements: actions },
+  ]);
 }
 
 export async function notifyCompleted(pipeline: PipelineRow): Promise<void> {
@@ -115,10 +158,15 @@ export async function notifyFailed(
  * notification if one already exists. Stores channel + root-thread ts on the
  * pipeline the first time we post for it. All errors are logged-and-swallowed
  * — notifier failures must not crash the orchestrator.
+ *
+ * `blocks` is optional: when provided, Slack renders the rich Block Kit
+ * payload (e.g. with action buttons) and `text` becomes the notification
+ * fallback. When omitted, only `text` is posted.
  */
 async function postToPipelineThread(
   pipeline: PipelineRow,
   text: string,
+  blocks?: Record<string, unknown>[],
 ): Promise<void> {
   try {
     const userId = await getRecipientUserId();
@@ -136,6 +184,7 @@ async function postToPipelineThread(
     const res = await slackClient().chat.postMessage({
       channel,
       text,
+      ...(blocks ? { blocks: blocks as never } : {}),
       ...(isReply && pipeline.slack_message_ts
         ? { thread_ts: pipeline.slack_message_ts }
         : {}),

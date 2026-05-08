@@ -4,6 +4,14 @@ export interface SubagentSpec {
   tools: readonly string[];
   model: string;
   maxTurns?: number;
+  /**
+   * Names of MCP servers (from src/mcp/registry.ts) this subagent is allowed
+   * to use. Each name must also appear in the resolved `mcpServers` passed
+   * into runAgent — names without a matching server are silently dropped at
+   * the runner layer. Per-tool access is still controlled by `tools[]`,
+   * which should include the MCP tool names like `mcp__sf-read__soqlQuery`.
+   */
+  mcpServers?: readonly string[];
 }
 
 export interface AgentConfig {

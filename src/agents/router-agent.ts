@@ -65,7 +65,7 @@ You cannot query inside any Salesforce org. You cannot look up users, contacts, 
 ## Your job
 
 1. Identify which client the request is for. Lean on \`triage.client_hints\` first; if a hint matches a client name (or its known aliases — check the client's \`index\` content), that's your client.
-2. From the \`devHubs\` list, pick the alias(es) related to that client. Aliases usually contain the client name or a known abbreviation (e.g. \`krahn-admin\`, \`leadventure-devhub\`).
+2. From the \`devHubs\` list, pick the alias(es) related to that client. Aliases usually contain the client name or a known abbreviation (e.g. \`krahn\`, \`leadventure-devhub\`).
 
 ## Output
 
@@ -88,7 +88,7 @@ Rules for the JSON:
 - Multiple plausible Dev Hubs: set "recommended_dev_hub" to null, list each candidate in "options".
 - No Dev Hub matches the client: "recommended_dev_hub" null, "options" [], confidence "low".
 - Cannot identify client at all: "client" null, "recommended_dev_hub" null, confidence "low".
-- "reasoning" MUST cite only what's in the evidence. Acceptable: "client_hints empty and no client name appears in raw_request"; "client_hints mentioned 'NRI' and the nri client is in the vault"; "two Dev Hubs in devHubs match the client (krahn-admin, krahn-prod)". Unacceptable: any claim about searching orgs, looking up users, or verifying things you have no tools to verify.
+- "reasoning" MUST cite only what's in the evidence. Acceptable: "client_hints empty and no client name appears in raw_request"; "client_hints mentioned 'NRI' and the nri client is in the vault"; "two Dev Hubs in devHubs match the client (krahn, krahn-prod)". Unacceptable: any claim about searching orgs, looking up users, or verifying things you have no tools to verify.
 
 Output only the fenced JSON block. No prose.`;
 

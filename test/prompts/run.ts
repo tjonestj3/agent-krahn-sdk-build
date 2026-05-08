@@ -37,7 +37,7 @@ const ROUTED_FIXTURE: RouterPayload = {
   client: 'krahnborn',
   confidence: 'high',
   reasoning: 'test harness fixture — Router skipped',
-  recommended_dev_hub: 'krahn-admin',
+  recommended_dev_hub: 'krahn',
   options: [],
 };
 

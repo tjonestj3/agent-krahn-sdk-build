@@ -2,7 +2,9 @@ import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import { env } from '../config/env.js';
 import { getPipelineBySlackThread } from '../db/pipelines.js';
 import { claimAndResume } from '../services/resume.js';
+import { cancelPipeline } from '../services/cancel.js';
 import { slackClient } from '../slack/client.js';
+import { CANCEL_PIPELINE_ACTION_ID } from '../slack/notifier.js';
 import { verifySlackRequest } from '../slack/verify.js';
 
 interface SlackUrlVerification {
@@ -54,6 +56,26 @@ export const slackRoute: FastifyPluginAsync = async (app) => {
     },
   );
 
+  // Slack interactivity payloads arrive as application/x-www-form-urlencoded
+  // with a single `payload` field containing JSON. Capture the raw body for
+  // HMAC verification, then expose `payload` as a string on req.body.
+  app.addContentTypeParser(
+    'application/x-www-form-urlencoded',
+    { parseAs: 'string' },
+    (req, body, done) => {
+      try {
+        const raw = typeof body === 'string' ? body : body.toString('utf8');
+        (req as SlackRequest).rawBody = raw;
+        const params = new URLSearchParams(raw);
+        const obj: Record<string, string> = {};
+        for (const [k, v] of params) obj[k] = v;
+        done(null, obj);
+      } catch (err) {
+        done(err as Error, undefined);
+      }
+    },
+  );
+
   app.post('/slack/events', async (req, reply) => {
     const rawBody = (req as SlackRequest).rawBody;
     if (!rawBody) {
@@ -83,6 +105,39 @@ export const slackRoute: FastifyPluginAsync = async (app) => {
       return reply.code(200).send();
     }
 
+    return reply.code(200).send();
+  });
+
+  app.post('/slack/interactions', async (req, reply) => {
+    const rawBody = (req as SlackRequest).rawBody;
+    if (!rawBody) {
+      return reply.code(400).send({ error: 'empty body' });
+    }
+
+    const sig = req.headers['x-slack-signature'];
+    const ts = req.headers['x-slack-request-timestamp'];
+    if (typeof sig !== 'string' || typeof ts !== 'string') {
+      return reply.code(401).send({ error: 'missing slack signature headers' });
+    }
+
+    if (!verifySlackRequest(rawBody, ts, sig, env.SLACK_SIGNING_SECRET)) {
+      return reply.code(401).send({ error: 'invalid slack signature' });
+    }
+
+    const body = req.body as { payload?: string };
+    if (!body.payload) {
+      return reply.code(400).send({ error: 'missing payload' });
+    }
+
+    let payload: SlackInteractivityPayload;
+    try {
+      payload = JSON.parse(body.payload) as SlackInteractivityPayload;
+    } catch {
+      return reply.code(400).send({ error: 'invalid payload json' });
+    }
+
+    // Acknowledge fast (Slack expects 200 within 3s); process async.
+    void handleSlackInteraction(payload, app.log);
     return reply.code(200).send();
   });
 };
@@ -167,4 +222,66 @@ async function postReply(
   text: string,
 ): Promise<void> {
   await slackClient().chat.postMessage({ channel, thread_ts, text });
+}
+
+interface SlackInteractivityPayload {
+  type: string;
+  user?: { id: string };
+  channel?: { id: string };
+  message?: { ts: string; thread_ts?: string };
+  actions?: { action_id: string; value?: string }[];
+}
+
+async function handleSlackInteraction(
+  payload: SlackInteractivityPayload,
+  log: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void },
+): Promise<void> {
+  if (payload.type !== 'block_actions') return;
+  const actions = payload.actions ?? [];
+  for (const action of actions) {
+    if (action.action_id === CANCEL_PIPELINE_ACTION_ID) {
+      await handleCancelButton(payload, action.value, log);
+    }
+    // Unknown action_ids (e.g. open_pr URL buttons) are intentionally ignored.
+  }
+}
+
+async function handleCancelButton(
+  payload: SlackInteractivityPayload,
+  pipelineId: string | undefined,
+  log: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void },
+): Promise<void> {
+  if (!pipelineId) {
+    log.warn({ payload }, 'cancel_pipeline action missing value');
+    return;
+  }
+
+  const channel = payload.channel?.id;
+  const messageTs = payload.message?.ts;
+  const threadTs = payload.message?.thread_ts ?? messageTs;
+  if (!channel || !threadTs) {
+    log.warn({ pipelineId }, 'cancel_pipeline missing channel/thread context');
+    return;
+  }
+
+  const outcome = await cancelPipeline(pipelineId, 'slack-button').catch((err) => {
+    log.warn({ err, pipelineId }, 'cancelPipeline threw');
+    return null;
+  });
+
+  let text: string;
+  if (!outcome) {
+    text = `:x: Couldn't cancel pipeline \`${pipelineId.slice(0, 8)}\` — internal error.`;
+  } else if (outcome.ok) {
+    log.info({ pipelineId }, 'pipeline cancelled via slack button');
+    text = `:no_entry_sign: Pipeline \`${pipelineId.slice(0, 8)}\` cancelled.`;
+  } else if (outcome.reason === 'not_found') {
+    text = `:question: Pipeline \`${pipelineId.slice(0, 8)}\` not found.`;
+  } else {
+    text = `:information_source: Pipeline \`${pipelineId.slice(0, 8)}\` is already \`${outcome.status}\` — nothing to cancel.`;
+  }
+
+  await slackClient()
+    .chat.postMessage({ channel, thread_ts: threadTs, text })
+    .catch((err) => log.warn({ err }, 'failed to post cancel-button reply'));
 }

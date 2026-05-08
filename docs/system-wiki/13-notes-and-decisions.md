@@ -11,9 +11,15 @@ The non-obvious choices made along the way, plus things deferred to a later phas
 
 ## Decisions made
 
-### No Salesforce MCP
+### Self-hosted, scope-limited Salesforce MCP
 
-Phase 0+ uses the `sf` CLI directly, not a Salesforce MCP. The Router only enumerates *local* orgs (a CLI-only thing) and globs the vault for client identification. A Salesforce MCP becomes a Phase 2+ concern, not a Phase 1 concern.
+Originally Phase 0+ used `sf` CLI for everything. As of the Scout/MCP integration, there's a single self-hosted MCP server (`src/mcp/sf-read-mcp.ts`) that wraps the existing `bin/{prod,scratch}-{query,describe}.sh` shell scripts as `soqlQuery` / `describeSObject` tools. **Only the Scout subagent uses it.** The orchestrator, Triage, Router, Work Identifier, Execution (parent), and Documentation agents all still use the `sf` CLI directly.
+
+Why self-hosted instead of pulling an off-the-shelf Salesforce MCP: the bin wrappers already strip Salesforce's `attributes` blocks and slim the describe output for LLM context. Off-the-shelf MCPs return raw payloads, blowing up Scout's context. Wrapping our own scripts is ~90 lines and keeps the existing token-stripping discipline.
+
+Why scope-limited to Scout: MCP tool schemas cost context tokens for every agent that has them attached. Scout is the *exploratory* read-side agent — the only one whose job is "find out what's already in Salesforce." Other agents either don't read orgs (Triage, Router on local-only data, Documentation) or already know what they need (Execution, Work Identifier).
+
+Why per-client allowlist via vault: per-client `_index.md` declares which named MCP servers a pipeline for that client may spawn. The code registry decides how to spawn them; the vault decides whether they're allowed. Both have to agree, so there's no path where adding a new client accidentally exposes an MCP server.
 
 ### Dev-Hub-only Router
 
@@ -33,6 +39,8 @@ This is the single most important guardrail against the system devolving into a 
 
 No VPS, no Railway, no Fly. Single Fastify process on a personal machine. The Slack/GitHub webhooks need a public URL but that's solved by `cloudflared tunnel` for now. Move to a managed host once the system has consistent uptime requirements.
 
+The same tunnel hostname (`agents.krahnagents.com`) routes a second path (`/console/*`) to the Krahn Console process on `:3001`. The Console can read `~/vault/clients/` directly precisely *because* it runs locally — its modal dropdown is a filesystem read, not an API call. Moving either process off the laptop forces a vault-access redesign.
+
 ### No SDK subagent wrapper
 
 The Anthropic SDK supports defining each agent as an `AgentDefinition` and orchestrating via a parent agent that uses `Task`. We don't do that. For deterministic sequencing (Triage → Router → ...) the Fastify orchestrator is the conductor and calls `query()` directly per stage. Revisit when an agent's order-of-operations actually depends on prior agents' output in non-trivial ways.
@@ -44,6 +52,14 @@ Combined with `allowDangerouslySkipPermissions: true`. Acceptable for local + si
 ### One process
 
 Single-process Fastify is the orchestrator. The per-client repo lock is in-memory. A server restart loses the lock state — but persisted pipeline state in Supabase is fine to retry. The day this becomes a Postgres advisory lock is the day we leave one process.
+
+### Two Slack apps, not one
+
+The workspace has a **Notifier** (this repo) and a **Krahn Console** (`slack-agents/krahn-console`) as separate api.slack.com apps with separate bot identities. Slack routes button clicks to whichever app posted the message, so co-locating "I post the DM with the Cancel button" and "I host the slash command + Home tab" in one app would force one of the surfaces to delegate via webhook anyway. Splitting them keeps each app's manifest, scopes, and request URL focused. Costs paid: two `.env` files, two processes to run, two manifest URLs to maintain. See [Architecture → Slack surface](#architecture).
+
+### Slack-agents and krahnborn-os are deployment peers
+
+The Krahn Console lives in a sibling repo (`~/Salesforce/AGENTS/slack-agents/`), not under this one. They communicate over HTTP (`POST /requests`) and shared Supabase state — no imported code, no symlink, no monorepo. When working in Claude Code, opening a session in `slack-agents/` does not auto-load this wiki and vice versa; cross-repo changes require either telling Claude to read both, or opening at `~/Salesforce/AGENTS/` so the working directory spans both subtrees.
 
 ## Known issues
 

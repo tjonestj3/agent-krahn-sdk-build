@@ -57,10 +57,12 @@ These exist so the *output* the agent ingests is small and safe. Use them instea
 | Package | Purpose |
 |---|---|
 | `@anthropic-ai/claude-agent-sdk` | The agent runtime. |
+| `@modelcontextprotocol/sdk` | Hosts the in-repo `sf-read` MCP server (`src/mcp/sf-read-mcp.ts`). |
 | `@slack/web-api` | Outbound DMs. |
 | `@supabase/supabase-js` | DB client. |
 | `dotenv` | env loading. |
 | `fastify` | HTTP server. |
+| `zod` | Tool input schemas for the MCP server. |
 
 Dev:
 
@@ -91,7 +93,7 @@ The `_index.md` shape is parsed by `src/config/clients.ts:loadClientConfig`. Req
 
 ```markdown
 ## Org
-- `sf` alias: `krahn-admin`
+- `sf` alias: `krahn`
 
 ## Repo
 - Remote: git@github.com:org/repo.git
@@ -100,6 +102,21 @@ The `_index.md` shape is parsed by `src/config/clients.ts:loadClientConfig`. Req
 ## Permission sets
 - `Sales_User_Account_Fields` — Sales reps. ...
 - `Field_Tech_Operations` — Field technicians. ...
+
+## MCP servers
+- `sf-read` — read-only Salesforce. Scout uses this for prod/scratch reads.
 ```
 
 Add a bullet to **Permission sets** every time a new role permset gets created and merged so subsequent pipeline runs can extend it.
+
+The **MCP servers** section is the per-client allowlist. Each name must match an entry in `src/mcp/registry.ts`; an unknown name is logged and skipped. A client without this section gets no MCP access, regardless of which agents declare `mcpServers` in code — both have to agree.
+
+## In-repo MCP servers
+
+The `src/mcp/` directory hosts MCP servers that ship with krahnborn-os. They're spawned as stdio subprocesses by the agent SDK during a pipeline run and torn down at the end.
+
+| Server | File | Tools | Used by |
+|---|---|---|---|
+| `sf-read` | `src/mcp/sf-read-mcp.ts` | `soqlQuery`, `describeSObject` | Scout subagent |
+
+The `sf-read` server wraps `bin/{prod,scratch}-{query,describe}.sh` — same `sf` CLI auth, same slim output shape, same read-only guarantees. The bash wrappers are still used by the parent Execution agent for scratch-org reads; the MCP path is specifically for Scout's mixed prod-and-scratch investigations.

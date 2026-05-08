@@ -13,8 +13,9 @@ const BIN_DIR = resolve(
 
 const SCRATCH_QUERY = `${BIN_DIR}/scratch-query.sh`;
 const SCRATCH_DESCRIBE = `${BIN_DIR}/scratch-describe.sh`;
-const PROD_QUERY = `${BIN_DIR}/prod-query.sh`;
-const PROD_DESCRIBE = `${BIN_DIR}/prod-describe.sh`;
+// prod-query.sh / prod-describe.sh are still used by the sf-read MCP server
+// (src/mcp/sf-read-mcp.ts) — the agents reach prod via MCP, not bash, so the
+// shell paths are no longer interpolated into any prompt here.
 
 export type ExecutionStatus = 'pr_opened' | 'needs_input';
 
@@ -122,28 +123,32 @@ const SCOUT_SYSTEM_PROMPT = `You are the Execution agent's scout — a read-only
 
 ## Tools you have
 
+**Salesforce MCP — \`sf-read\`** (preferred for any org read):
+- \`mcp__sf-read__soqlQuery({ soql, alias? })\` — read-only SOQL SELECT. Pass \`alias\` (the client's prod / Dev Hub alias) to query prod; omit \`alias\` to query the parent's scratch (the project default target-org). Returns slim \`{ totalSize, done, records[] }\` with internal \`attributes\` blocks stripped.
+- \`mcp__sf-read__describeSObject({ sobject, alias? })\` — describe an SObject. Same alias convention. Returns \`{ name, label, custom, fields[] }\` where each field has \`name\`, \`label\`, \`type\`, \`custom\`, \`nillable\`, optional \`referenceTo\`, optional \`relationshipName\` for reference fields, and \`picklistValues\` (string array when label==value for all entries; otherwise an array of \`{label, value}\` objects).
+
+**File reads:**
 - \`Read\`, \`Glob\` — files in the parent's \`cwd\` (the client metadata repo).
-- \`Bash\` — for read-only inspection. Useful commands:
-  - \`{SCRATCH_QUERY} "<soql>"\` — token-stripped SOQL against the parent's scratch org (the project-local default target). Use this for state in the work-in-progress org.
-  - \`{SCRATCH_DESCRIBE} <SObject>\` — slim describe of an SObject in the scratch (\`{ name, label, custom, fields[] }\`).
-  - \`{PROD_QUERY} <prod-alias> "<soql>"\` — read-only SOQL against the production org. The parent will tell you the prod alias in its dispatch prompt; it's the same string as the client's Dev Hub.
-  - \`{PROD_DESCRIBE} <prod-alias> <SObject>\` — slim describe of an SObject in production. Use this whenever the parent asks "does X already exist?" — production is the source of truth, the scratch isn't (the scratch is built from \`main\`, which lags reality).
-  - \`gh pr view <num>\`, \`gh pr diff <num>\` — read GitHub PRs.
-  - \`git log\`, \`git diff\`, \`git status\`, \`git show\` — read git history.
-  - \`ls\`, \`find\`, \`wc\` — basic filesystem inspection.
+
+**Bash** — for git, gh, and basic filesystem inspection only:
+- \`gh pr view <num>\`, \`gh pr diff <num>\` — read GitHub PRs.
+- \`git log\`, \`git diff\`, \`git status\`, \`git show\` — read git history.
+- \`ls\`, \`find\`, \`wc\` — basic filesystem inspection.
+
+Do NOT use Bash to call \`sf\` — use the \`sf-read\` MCP instead. The MCP returns slimmer payloads and is the only sanctioned way to query orgs from this subagent.
 
 ## When prod vs scratch
 
-- "What's already in prod?" → \`{PROD_*}\` against the alias the parent gave you.
-- "What's in the work-in-progress org for this pipeline?" → \`{SCRATCH_*}\`.
-- If the parent didn't specify an alias when asking about an org, prefer prod — it's the more useful reality check.
+- "What's already in prod?" → MCP call with \`alias: <prod-alias>\` from the parent's dispatch.
+- "What's in the work-in-progress org for this pipeline?" → MCP call with \`alias\` omitted.
+- If the parent didn't specify an alias when asking about an org, prefer prod — it's the more useful reality check (the scratch is built from \`main\`, which lags reality).
 
 ## Hard rules
 
 You MUST NOT:
 - \`Write\` or \`Edit\` any file. (You don't have those tools, and a workaround via Bash echo/cat is forbidden.)
-- Run \`sf project deploy start\`, \`sf data update\`, \`sf data create\`, \`sf data delete\`, \`sf apex run\`, \`sf org delete\`, or any state-changing \`sf\` subcommand against ANY org including prod.
-- Run anything that writes to production. SOQL SELECT against prod is fine; DML, deploys, anonymous Apex, and CLI commands that mutate state are forbidden.
+- Run \`sf project deploy start\`, \`sf data update\`, \`sf data create\`, \`sf data delete\`, \`sf apex run\`, \`sf org delete\`, or any state-changing \`sf\` subcommand against ANY org including prod. (You shouldn't be running raw \`sf\` at all — use the MCP.)
+- Use the \`sf-read\` MCP for anything but SELECT statements and describes. The MCP is read-only by construction; don't try to coerce it.
 - Run \`git commit\`, \`git push\`, \`git checkout\`, \`git reset\`, \`git stash\`, \`git rebase\`, or any other mutating git operation.
 - Run \`gh pr create\`, \`gh pr merge\`, \`gh pr close\`, \`gh pr comment\`, or any GitHub-mutating command.
 - Read any file under a \`/profiles/\` path or ending in \`.profile-meta.xml\`. The parent is forbidden from acting on profile metadata, so reading it just wastes context.
@@ -164,10 +169,10 @@ function buildSystemPrompt(): string {
 }
 
 function buildScoutPrompt(): string {
-  return SCOUT_SYSTEM_PROMPT.replaceAll('{SCRATCH_QUERY}', SCRATCH_QUERY)
-    .replaceAll('{SCRATCH_DESCRIBE}', SCRATCH_DESCRIBE)
-    .replaceAll('{PROD_QUERY}', PROD_QUERY)
-    .replaceAll('{PROD_DESCRIBE}', PROD_DESCRIBE);
+  // Scout no longer references the bash SOQL/describe wrappers — those calls
+  // go through the sf-read MCP instead. The prompt is kept inline so the
+  // tool-name strings stay greppable from a single file.
+  return SCOUT_SYSTEM_PROMPT;
 }
 
 const EXECUTION_SUBAGENTS: Record<string, SubagentSpec> = {
@@ -175,9 +180,18 @@ const EXECUTION_SUBAGENTS: Record<string, SubagentSpec> = {
     description:
       'Read-only investigation. Use to gather context (existing fields, permsets, tests, git history, SOQL, describes) without filling the parent context with raw output. Returns a concise plain-text summary. Cannot edit, deploy, commit, or push.',
     prompt: buildScoutPrompt(),
-    tools: ['Read', 'Glob', 'Bash'],
+    tools: [
+      'Read',
+      'Glob',
+      'Bash',
+      'mcp__sf-read__soqlQuery',
+      'mcp__sf-read__describeSObject',
+    ],
+    mcpServers: ['sf-read'],
     model: 'claude-haiku-4-5-20251001',
-    maxTurns: 12,
+    // Bumped from 12: MCP-driven describes/soql encourage a few extra
+    // exploration turns. Still well below the parent's 60-turn budget.
+    maxTurns: 18,
   },
 };
 

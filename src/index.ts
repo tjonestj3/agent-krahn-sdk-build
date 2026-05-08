@@ -5,6 +5,7 @@ import { requestsRoute } from './routes/requests.js';
 import { respondRoute } from './routes/respond.js';
 import { slackRoute } from './routes/slack.js';
 import { githubRoute } from './routes/github.js';
+import { pipelinesRoute } from './routes/pipelines.js';
 
 const app = Fastify({
   logger: { level: process.env.LOG_LEVEL ?? 'info' },
@@ -16,6 +17,7 @@ app.get('/health', async () => ({ status: 'ok' }));
 
 await app.register(requestsRoute);
 await app.register(respondRoute);
+await app.register(pipelinesRoute);
 await app.register(slackRoute);
 await app.register(githubRoute);
 

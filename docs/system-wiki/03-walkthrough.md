@@ -38,7 +38,7 @@ No blockers. Pipeline continues.
 
 ## 3. Router
 
-Sonnet 4.6 reads the local org list (`bin/sf-orgs-summary.sh`) and the client `_index.md` files. Identifies the client as `krahnborn` and the Dev Hub as `krahn-admin`. Stores both on the pipeline row.
+Sonnet 4.6 reads the local org list (`bin/sf-orgs-summary.sh`) and the client `_index.md` files. Identifies the client as `krahnborn` and the Dev Hub as `krahn`. Stores both on the pipeline row.
 
 ## 4. Work Identifier
 
@@ -74,7 +74,7 @@ The orchestrator:
 3. Asserts the working tree is clean.
 4. `git fetch origin && git checkout main && git pull --ff-only`.
 5. Creates branch `krahnborn-os/<short-id>-add-custom-picklist-field-account-tier-on-lead` and checks it out.
-6. Spins a scratch org (`bin/spin-scratch.sh krahn-admin krahnborn-os-<short-id> 7`).
+6. Spins a scratch org (`bin/spin-scratch.sh krahn krahnborn-os-<short-id> 7`).
 7. `sf project deploy start --target-org <scratch-alias>` — pushes current `main` into the scratch.
 8. `sf config set target-org=<scratch-alias>` — local default for the agent.
 

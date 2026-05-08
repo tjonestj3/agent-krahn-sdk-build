@@ -18,18 +18,28 @@ sf sobject describe --sobject "$SOBJECT" --json | node -e '
     process.exit(2);
   }
   const r = data.result ?? {};
-  const fields = (r.fields ?? []).map((f) => ({
-    name: f.name,
-    label: f.label,
-    type: f.type,
-    custom: !!f.custom,
-    nillable: !!f.nillable,
-    referenceTo: f.referenceTo && f.referenceTo.length ? f.referenceTo : undefined,
-    picklistValues:
-      f.type === "picklist" || f.type === "multipicklist"
-        ? (f.picklistValues ?? []).map((p) => p.value)
-        : undefined,
-  }));
+  const fields = (r.fields ?? []).map((f) => {
+    const isPicklist = f.type === "picklist" || f.type === "multipicklist";
+    let picklistValues;
+    if (isPicklist) {
+      const raw = f.picklistValues ?? [];
+      const anyDiffer = raw.some((p) => p.label !== p.value);
+      picklistValues = anyDiffer
+        ? raw.map((p) => ({ label: p.label, value: p.value }))
+        : raw.map((p) => p.value);
+    }
+    return {
+      name: f.name,
+      label: f.label,
+      type: f.type,
+      custom: !!f.custom,
+      nillable: !!f.nillable,
+      referenceTo: f.referenceTo && f.referenceTo.length ? f.referenceTo : undefined,
+      relationshipName:
+        f.type === "reference" && f.relationshipName ? f.relationshipName : undefined,
+      picklistValues,
+    };
+  });
   console.log(JSON.stringify({
     name: r.name,
     label: r.label,

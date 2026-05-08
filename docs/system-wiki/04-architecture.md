@@ -88,6 +88,34 @@ completed
 - `pipeline_events` is the audit log. Every stage logs `stage_started`, `stage_completed`, and `stage_telemetry`. Pauses log `awaiting_input`. The diff guard logs `diff_guard_violation`. Failures log `stage_failed`.
 - `npm run pipelines` lists recent rows; `npm run pipelines -- <id>` shows the full event stream and the cost/turn telemetry per stage.
 
+## Slack surface: two apps, two processes
+
+The Slack workspace (`krahnborn`) hosts **two distinct Slack apps**, each owning a different surface. Both run as separate Node processes on the same machine.
+
+| App | Process | Port | Owns |
+|---|---|---|---|
+| **Notifier** (this repo, krahnborn-os) | Fastify | 3000 | Outbound DMs, thread-reply resume, Cancel buttons |
+| **Krahn Console** (`~/Salesforce/AGENTS/slack-agents/krahn-console`) | Bolt-TS | 3001 | `/krahn` slash command + modal, App Home dashboard |
+
+```
+Slack → agents.krahnagents.com (cloudflared tunnel)
+          │
+          ├── /slack/events, /slack/interactions ─► localhost:3000  (krahnborn-os Notifier)
+          ├── /github/webhook                    ─► localhost:3000
+          └── /console/slack/events              ─► localhost:3001  (Krahn Console)
+```
+
+**Why two apps:** Slack delivers button clicks back to whichever app posted the message. The Notifier owns DMs and thread replies (so the Cancel button must live on Notifier messages); the Console owns the slash command and Home tab (so the modal lives on the Console). One bot identity per surface keeps the routing unambiguous.
+
+**How they share state:**
+
+- **HTTP** — The Console's modal submission `POST`s to `KRAHNBORN_API_URL/requests` with `source: 'slack-console'`. That's the only RPC between them; no shared library code.
+- **Supabase** — The Console reads `pipelines` directly for the Home tab dashboard. It uses the same `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` as the orchestrator. (If the Console is ever deployed to a separate host, swap to a `GET /pipelines` endpoint here and drop the Supabase env on the Console side.)
+- **Vault** — Both processes read `~/vault/clients/<name>/_index.md` from the shared filesystem. The Console's modal client dropdown is `readdirSync('~/vault/clients')` filtered to directories. The Router agent here resolves client identity from the same folders, so the dropdown stays in lockstep with what krahnborn-os understands. The Console caches the list at startup — restart to pick up new client folders.
+- **No symlinks, no monorepo.** The two repos are deployment peers, not code peers.
+
+**Why this works without a server:** the Krahn Console process runs on the same laptop as krahnborn-os, so `~/vault/` is just a filesystem read. Cloudflared tunnels public traffic to `localhost`. Move either process to a different host and the vault read becomes the next problem to solve (likely: replace with a `GET /clients` endpoint here).
+
 ## Security model
 
 - All `/requests` and `/respond` calls require `Authorization: Bearer ${KRAHNBORN_API_TOKEN}`.

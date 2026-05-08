@@ -6,7 +6,7 @@
 # Output shape:
 # {
 #   "orgs": [
-#     { "alias": "krahn-admin", "username": "...", "orgId": "00D...",
+#     { "alias": "krahn", "username": "...", "orgId": "00D...",
 #       "isDevHub": true, "connectedStatus": "Connected",
 #       "isDefaultDevHub": true, "lastUsed": "2026-04-30T..." },
 #     ...
